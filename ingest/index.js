@@ -1,5 +1,6 @@
 import pg from 'pg'
 import fs from 'fs'
+import glob from 'glob'
 import nReadlines from 'n-readlines'
 import gzip from 'node-gzip'
 import {parse} from 'date-fns'
@@ -54,14 +55,6 @@ const getLastInserted = async (schema) => {
     return lastInserted.rows[0].response_time;
 }
 
-const parseFileTimestamp = (filename) => {
-    const match = filename.match(/^.*?(\d+)\.[a-z0-9]+$/);
-    if (match != null) {
-        return match[1];
-    }
-    return null;
-}
-
 const parseLogLineMeta = (line) => {
     const match = line.toString('utf8').match(/^\[(.*?)\] "GET (.*?)" 200/);
     if (match) {
@@ -76,20 +69,26 @@ const parseLogLineMeta = (line) => {
 
 
 const findNextFile = (source, lastSuccessful) => {
-    const files = fs.readdirSync(source.path);
-    let minEligibleTs = null;
-    let minEligibleFile = null;
-    for (const file of files) {
-        const ts = parseFileTimestamp(file);
-        if (ts != null) {
-            if (ts > lastSuccessful && (ts < minEligibleTs || minEligibleTs == null)) {
-                minEligibleTs = ts;
-                minEligibleFile = file;
+    return new Promise((done, failed) => {
+        glob(source.matches, {}, function (er, files) {
+            if (er) {
+                failed(er);
+                return;
             }
-        }
-    }
-    console.log(minEligibleFile)
-    return source.path+minEligibleFile;
+            console.log('Source ID '+source.sourceid+': '+files.length+' files');
+            if (!lastSuccessful) {
+                done(files[0]);
+                return;
+            }
+            for (let i=0; i<files.length; i++) {
+                if (lastSuccessful == files[i]) {
+                    done(files[i+1]);
+                    return;
+                }
+            }
+            done(null);
+        });
+    });
 }
 
 const assembleResponse = async (readLines) => {
@@ -116,108 +115,165 @@ const isNewEntry = (line) => {
     return false; 
 }
 
-const loadFile = {
-    'bz2-bulks': (file) => {
-        const uncompressedFile = conf.working_dir+"uncompressed.ndjson";              
-        let lines;
-        lines = new nReadlines(uncompressedFile);
+const parseHafasResponse = (line) => {
+    const data = JSON.parse(line.toString('utf8'));
+    if (Array.isArray(data) && data[1] == 'res') {
+        return JSON.parse(data[2]);
+    }
+    if (data.log) {
+        const res = JSON.parse(data.log);
+        if (res.svcResL) {
+            return res;
+        }
+    }
+    return null;
+}
+
+const fileReader = {
+    'hafas': (file) => {
+        const lines = new nReadlines(file);
         return {
-            next: () => {
-                return new Promise((done, failed) => {
-                    const donext = () => {
-                        let line;
-                        while (line = lines.next()) {
-                            const data = JSON.parse(line.toString('utf8'));
-                            if (data[1] == 'res') {
-                                const res = JSON.parse(data[2]);
-                                let type = res.svcResL[0].meth;
-                                //console.log(res.svcResL[0]);
-                                if (type == 'StationBoard' && res.svcResL[0].res) type = res.svcResL[0].res.type;
-                                
-                                type = responseTypeMapping[type];
-                                if (type) {
-                                    console.log(type);
-                                    type.fn(res).then(response => {
-                                        console.log('test');
-                                        done({ value: {response: response, ts: null, type: type.id}, done: false });
-                                    });
-                                    return;
-                                }
-                            }
+            next: () => {                
+                let line;
+                while (line = lines.next()) {
+                    const res = parseHafasResponse(line);
+                    if (res) {
+                        let type = res.svcResL[0].meth;
+                        if (type == 'StationBoard' && res.svcResL[0].res) type = res.svcResL[0].res.type;
+                        
+                        type = responseTypeMapping[type];
+                        if (type) {
+                            return type.fn(res).then(response => {
+                                return {response: response, ts: null, type: type.id};
+                            }).catch(err => {
+                                return {response: null, ts: null, type: type.id, err: err};
+                            });
                         }
-                        done({ value: null, done: true });                            
                     }
-                    if (!lines) {                            
-                        exec("bzip2 -k -d -c "+file+" > "+uncompressedFile, (err, stdout, stderr) => {
-                            if (err) {
-                                err.stderr = stderr;
-                                failed(err);
-                                return;
-                            }              
-                            lines = new nReadlines(uncompressedFile);
-                            donext();
-                        });
-                    } else {
-                        donext();
-                    }                        
-                });
+                }
+                return Promise.resolve(null);
             }
         }
     },
-    'gzip-single': (file) => {
+    'fptf': (file) => {
         let readLines = [];
         const lines = new nReadlines(file);
-
         return {
             next: () => {
                 let line;
+                if (readLines == null) {
+                    return Promise.resolve(null);
+                }
                 while (line = lines.next()) {
                     if (isNewEntry(line) && readLines.length != 0) {
                         return assembleResponse(readLines).then(response => {
                             readLines = [line];
-                            return { value: response, done: false };
+                            return response;
                         });                       
                     }
                     readLines.push(line);
                     if (readLines.length > 100000) return;
                 }
                 return assembleResponse(readLines).then(response => {
-                    readLines = [line];
-                    return { value: response, done: false };
+                    readLines = null;
+                    return response;
                 });
             }
         }
     }
 }
 
+const decompressFile = (cmdToStdout, sourceid) => {
+    const uncompressedFile = conf.working_dir+sourceid+'.uncompressed';
+    return new Promise((done, failed) => {
+        exec(cmdToStdout+" > "+uncompressedFile, (err, stdout, stderr) => {
+            if (err) {
+                err.stderr = stderr;
+                failed(err);
+                return;
+            }              
+            done(uncompressedFile);
+        });
+    });
+}
 
+const fileLoader = {
+    'bz2-bulks': (file, sourceid) => decompressFile("bzip2 -k -d -c "+file, sourceid),
+    'gzip-bulks': (file, sourceid) => decompressFile("gzip -k -d -c "+file, sourceid),
+    'gzip-single': (file, sourceid) => Promise.resolve(file)
+}
 
+const findAndOpenNextFile = async (source, lastSuccessful) => {
+    let file = await findNextFile(source, lastSuccessful);
+    console.log(file);
+    if (!file) return {file: null, fileReader: null};
+    let loadedFile = await fileLoader[source.compression](file, source.sourceid);
+    console.log('File loaded.');
+    return {file: file, fileReader: fileReader[source.type](loadedFile)};
+}
+
+const responseReader = (source, lastSuccessful) => {
+    let iterator;
+    let i = 0;
+    return {
+        next: () => {
+            return new Promise((done, failed) => {
+                const renewIterator = () => {
+                    console.log(i);
+                    findAndOpenNextFile(source, lastSuccessful).then(({file, fileReader}) => {
+                        iterator = fileReader;
+                        lastSuccessful = file;
+                        if (!iterator) {
+                            done(null);
+                            return;
+                        }
+                        iterate();
+                    });
+                }
+                const iterate = () => {
+                    i++;
+                    iterator.next().then(value => {
+                        if (value) {
+                            done(value);
+                        } else {
+                            renewIterator();
+                        }
+                    });
+                }
+                if (!iterator) {
+                    renewIterator();
+                } else {
+                    iterate();
+                }
+            });
+        }
+    }        
+}
 
 const loadFiles = async (target, lastSuccessful) => {
     for (const source of target.sources) {
-        if (source.sourceid == 0) continue;
-        const file = findNextFile(source, lastSuccessful);
-        //const it = loadFile['bz2-bulks'](file);
-        const it = loadFile['gzip-single'](file);
-        let result = await it.next();
+        if (source.sourceid != 0) continue;
+        const it = responseReader(source, lastSuccessful);
+        let result;
         let i = 0;
         let w = 0;
         let wo = 0;
-        while (!result.done) {
-            if (result.value.type == 'journeys'){
-                if (result.value.response?.realtimeDataFrom) {
+        while ((result = await it.next())) {
+            if (result.type == 'journeys'){
+                if (result.response?.realtimeDataFrom) {
                     w++;
-                    console.log(result.value?.ts?.getTime(), result.value.response.realtimeDataFrom, result.value?.ts?.getTime()/1000-result.value.response.realtimeDataFrom);
+                    console.log(result.ts?.getTime(), result.response.realtimeDataFrom, result.ts?.getTime()/1000-result.response.realtimeDataFrom);
 
                 } else {
                     wo++;
                 }
 
                 //break;
-            } 
+            }
             i++;
-            result = await it.next();
         }
+       
+
         console.log('responses:', i, wo, w);
     }
 }
