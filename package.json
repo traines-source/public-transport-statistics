@@ -1,0 +1,24 @@
+{
+	"name": "public-transport-stats",
+	"description": "",
+	"version": "1.0.0",
+	"type": "module",
+	"main": "index.js",
+	"files": [
+		"ingest/index.js"
+	],
+	"author": "https://github.com/traines-source/",
+	"license": "MIT",
+	"engines": {
+		"node": ">=16"
+	},
+	"dependencies": {
+		"date-fns": "^2.29.3",
+		"hafas-client": "^6.0.0",
+		"n-readlines": "^1.0.1",
+		"node-gzip": "^1.1.2",
+		"pg": "^8.8.0"
+	},
+	"scripts": {},
+	"private": true
+}
