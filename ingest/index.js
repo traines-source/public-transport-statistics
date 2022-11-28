@@ -1,5 +1,5 @@
 import pg from 'pg'
-import fs from 'fs'
+import md5 from 'md5'
 import glob from 'glob'
 import nReadlines from 'n-readlines'
 import gzip from 'node-gzip'
@@ -42,7 +42,7 @@ const createRequestMockClient = (baseProfile) => {
 }
 
 const client = createRequestMockClient(dbProfile);
-const responseTypeMapping = { //Reconstruction==refreshJourney
+const responseTypeMapping = {
     'DEP': {id: 'departures', fn: (resp) => client.departures(dummyStation, {responseData: resp})},
     'ARR': {id: 'arrivals', fn: (resp) => client.arrivals(dummyStation, {responseData: resp})},
     'JourneyDetails': {id: 'trip', fn: (resp) => client.trip('id', {responseData: resp})},
@@ -236,7 +236,8 @@ const responseReader = (source, lastSuccessful) => {
                         if (value) {
                             done(value);
                         } else {
-                            renewIterator();
+                            done(null);
+                            //renewIterator();
                         }
                     });
                 }
@@ -250,31 +251,240 @@ const responseReader = (source, lastSuccessful) => {
     }        
 }
 
+const parseStations = (stopOrStations) => {
+    const out = [];
+    for (let s of stopOrStations) {
+        if (!s) continue;
+        const child = {
+            station_id: s.id,
+            name: s.name,
+            lon: s.location.longitude, 
+            lat: s.location.latitude
+        };
+        if (s.station) {
+            child.parent = s.station.id; 
+            out.push({
+                station_id: s.station.id,
+                name: s.station.name,
+                lon: s.station.location.longitude, 
+                lat: s.station.location.latitude,
+            });
+        }
+        out.push(child);
+    }
+    return out;
+}
+
+const parseOperator = (operator) => {
+    if (!operator) return null;
+    return {
+        id: operator.id,
+        name: operator.name
+    }
+}
+
+const parseLine = (line) => {
+    return {
+        line_name: line.name,
+        line_fahrtnr: line.fahrtNr,
+        line_id: line.id,
+        product_type: line.product,
+        product_name: line.productName
+    }
+}
+
+const parseMetadata = (root) => {
+    return {
+        trip_id: root.tripId,
+        remarks: root.remarks,
+        cancelled: root.cancelled,
+        loadFactor: root.loadFactor,
+        operator: parseOperator(root.line.operator),
+        ...parseLine(root.line)
+    }
+}
+
+const parseDeparture = (obj) => {
+    return {
+        scheduled_time: obj.plannedDeparture,
+        projected_time: obj.departure,
+        is_departure: true,
+        delay_minutes: obj.departureDelay,
+        scheduled_platform: obj.plannedDeparturePlatform,
+        projected_platform: obj.departurePlatform
+    }
+}
+
+const parseArrival = (obj) => {
+    return {
+        scheduled_time: obj.plannedArrival,
+        projected_time: obj.arrival,
+        is_departure: false,
+        delay_minutes: obj.arrivalDelay,
+        scheduled_platform: obj.plannedArrivalPlatform,
+        projected_platform: obj.arrivalPlatform
+    }
+}
+
+const parseStopovers = (stopovers, destination, provenance, sample_time) => {
+    if (!stopovers) return [];
+    const out = [];
+    for (let stopover of stopovers) {
+        if (stopover.departure) {
+            out.push({
+                ...parseMetadata(stopover),
+                stations: parseStations([stopover.stop]),
+                station_id: stopover.stop.id,
+                ...parseDeparture(stopover),
+                sample_time: sample_time,
+                destination_provenance: destination?.id,                
+            });
+        }
+        if (stopover.arrival) {
+            out.push({
+                ...parseMetadata(leg),
+                stations: parseStations([stopover.stop]),
+                station_id: stopover.stop.id,
+                ...parseArrival(stopover),                    
+                sample_time: sample_time,
+                destination_provenance: provenance?.id,
+            });
+        }
+    }
+    return out;
+}
+
+const parseAlternatives = (alternatives, is_departure, sample_time, fallback_station_id) => {
+    if (!alternatives) return [];
+    const out = [];
+    for (let alt of alternatives) {
+        out.push({
+            ...parseMetadata(alt),
+            stations: parseStations([alt.stop, alt.destination, alt.origin]),
+            station_id: alt.stop?.id || fallback_station_id,
+            scheduled_time: alt.plannedWhen,
+            projected_time: alt.when,
+            is_departure: is_departure,
+            delay_minutes: alt.delay,
+            sample_time: sample_time,
+            destination_provenance: (is_departure ? alt.destination : alt.origin)?.id,
+            scheduled_platform: alt.plannedPlatform,
+            projected_platform: alt.platform
+        });
+        out.push(...parseStopovers(alt.previousStopovers, alt.origin, alt.destination, sample_time));
+        out.push(...parseStopovers(alt.nextStopovers, alt.origin, alt.destination, sample_time));    
+    }
+    return out;
+}
+
+const parseTrip = (trip, sample_time) => {
+    const out = [
+        {
+            ...parseMetadata(trip),
+            stations: parseStations([trip.origin]),
+            station_id: trip.origin.id,
+            ...parseDeparture(trip),
+            sample_time: sample_time,
+            destination_provenance: trip.destination,                
+        },
+        {
+            ...parseMetadata(trip),
+            stations: parseStations([trip.destination]),
+            station_id: trip.destination.id,
+            ...parseArrival(trip),                    
+            sample_time: sample_time,
+            destination_provenance: trip.origin,
+        }
+    ];
+    out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, sample_time));
+    out.push(...parseAlternatives(trip.alternatives, true, sample_time, trip.origin.id));
+    return out;    
+}
+
+const parseJourneys = (journeys, sample_time) => {
+    return journeys.map(journey => journey.legs.map(leg => {
+        const out = [
+            {
+                ...parseMetadata(leg),
+                stations: parseStations([leg.origin]),
+                station_id: leg.origin.id,
+                ...parseDeparture(leg),
+                sample_time: sample_time,
+                destination_provenance: null,                
+            },
+            {
+                ...parseMetadata(leg),
+                stations: parseStations([leg.destination]),
+                station_id: leg.destination.id,
+                ...parseArrival(leg),                    
+                sample_time: sample_time,
+                destination_provenance: null,
+            }
+        ];
+        out.push(...parseStopovers(leg.stopovers, null, null, sample_time));
+        out.push(...parseAlternatives(leg.alternatives, true, sample_time, leg.origin.id));
+        return out;
+    }).flat()).flat();
+}
+
+const parseRt = (obj) => {
+    return obj.realtimeDataUpdatedAt || obj.realtimeDataFrom;
+}
+
+const parser = {
+    'journeys': (journeys) => parseJourneys(journeys.journeys, parseRt(journeys)),
+    'departures': (departures) => parseAlternatives(departures.departures, true, parseRt(departures)),
+    'arrivals': (arrivals) => parseAlternatives(arrivals.arrivals, false, parseRt(arrivals)),
+    'trip': (trip) => parseTrip(trip.trip, parseRt(trip)),
+    'refreshJourney': (journey) => parseJourneys([journey.journey], parseRt(journey))
+}
+
 const loadFiles = async (target, lastSuccessful) => {
+    const lastSuccessfuls = {
+        0: null,
+        1: '/mnt/lfs/traines-stc/tstp-raw-mirror/data.20221125.log.gz.gz',
+        2: '/mnt/lfs/traines-stc/tstp-mirror/responses.big1669381989.ndgz'
+    }
+    const hashes = [];
+    let remaining = true;
     for (const source of target.sources) {
-        if (source.sourceid != 0) continue;
-        const it = responseReader(source, lastSuccessful);
+        if (source.sourceid == 0) continue;
+        const it = responseReader(source, lastSuccessfuls[source.sourceid]);
         let result;
         let i = 0;
         let w = 0;
         let wo = 0;
+        let min = 1000;
+        let max = 0;
+        let sum = 0;
+        let duplicates = 0;
         while ((result = await it.next())) {
-            if (result.type == 'journeys'){
-                if (result.response?.realtimeDataFrom) {
-                    w++;
-                    console.log(result.ts?.getTime(), result.response.realtimeDataFrom, result.ts?.getTime()/1000-result.response.realtimeDataFrom);
-
-                } else {
-                    wo++;
-                }
-
-                //break;
+            if (!result.type || !result.response) continue;
+            const hash = md5(JSON.stringify(result.response));
+            if (hashes[hash]) {
+                duplicates++;
+                continue;
             }
+            hashes[hash] = source.sourceid;
+            
+            if (result.response?.realtimeDataFrom || result.response?.realtimeDataUpdatedAt) {
+                w++;
+                const diff = result.ts?.getTime()/1000-(result.response.realtimeDataFrom || result.response.realtimeDataUpdatedAt);
+                if (diff < min) min = diff;
+                if (diff > max) max = diff;
+                sum += diff;
+            } else {
+                wo++;
+            }
+
+            //break;
+            
             i++;
         }
        
 
-        console.log('responses:', i, wo, w);
+        console.log('responses:', i, wo, w, duplicates);
+        console.log('minmaxavg', min, max, sum/w);
     }
 }
 
