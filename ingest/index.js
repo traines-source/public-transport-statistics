@@ -45,10 +45,10 @@ const client = createRequestMockClient(dbProfile);
 const responseTypeMapping = {
     'DEP': {id: 'departures', fn: (resp) => client.departures(dummyStation, {responseData: resp})},
     'ARR': {id: 'arrivals', fn: (resp) => client.arrivals(dummyStation, {responseData: resp})},
-    'JourneyDetails': {id: 'trip', fn: (resp) => client.trip('id', {responseData: resp})},
-    'TripSearch': {id: 'journeys', fn: (resp) => client.journeys(dummyStation, dummyStation, {responseData: resp})},
-    'JourneyGeoPos': {id: 'radar', fn: (resp) => client.radar({north: 1, west: 0, south: 0, east: 1}, {responseData: resp})},
-    'Reconstruction': {id: 'refreshJourney', fn: (resp) => client.refreshJourney('token', {responseData: resp})}
+    'JourneyDetails': {id: 'trip', fn: (resp) => client.trip('id', {responseData: resp, stopovers: true})},
+    'TripSearch': {id: 'journeys', fn: (resp) => client.journeys(dummyStation, dummyStation, {responseData: resp, stopovers: true})},
+    //'JourneyGeoPos': {id: 'radar', fn: (resp) => client.radar({north: 1, west: 0, south: 0, east: 1}, {responseData: resp})},
+    'Reconstruction': {id: 'refreshJourney', fn: (resp) => client.refreshJourney('token', {responseData: resp, stopovers: true})}
 }
 const getLastInserted = async (schema) => {
     const lastInserted = await pgc.query('SELECT MAX(response_time) AS response_time FROM '+schema+'.response_log');
@@ -91,6 +91,9 @@ const findNextFile = (source, lastSuccessful) => {
     });
 }
 
+const countRt = (raw_utf8) => {
+    return (raw_utf8.match(/TimeR/g) || []).length;
+}
 const assembleResponse = async (readLines) => {
     const concatLines = [];
     for (let i=1; i<readLines.length; i++) {
@@ -99,13 +102,16 @@ const assembleResponse = async (readLines) => {
     }
     const meta = parseLogLineMeta(readLines[0]);
     let response;
+    let expectedCount;
     try {
         const raw = await gzip.ungzip(Buffer.concat(concatLines));
-        response = JSON.parse(raw.toString('utf-8'));
+        const raw_utf8 = raw.toString('utf-8');
+        expectedCount = (raw_utf8.match(/elay": \d+/g) || []).length;
+        response = JSON.parse(raw_utf8);
     } catch(e) {
         console.log(e)
     }
-    return {response: response, ts: meta.ts, type: meta.type};
+    return {response: response, ts: meta.ts, type: meta.type, expectedRtCount: expectedCount};
 }
 
 const isNewEntry = (line) => {
@@ -116,7 +122,7 @@ const isNewEntry = (line) => {
 }
 
 const parseHafasResponse = (line) => {
-    const data = JSON.parse(line.toString('utf8'));
+    const data = JSON.parse(line);
     if (Array.isArray(data) && data[1] == 'res') {
         return JSON.parse(data[2]);
     }
@@ -136,7 +142,9 @@ const fileReader = {
             next: () => {                
                 let line;
                 while (line = lines.next()) {
-                    const res = parseHafasResponse(line);
+                    const raw_utf8 = line.toString('utf8');
+                    const res = parseHafasResponse(raw_utf8);
+                    const expectedCount = countRt(raw_utf8);
                     if (res) {
                         let type = res.svcResL[0].meth;
                         if (type == 'StationBoard' && res.svcResL[0].res) type = res.svcResL[0].res.type;
@@ -144,10 +152,12 @@ const fileReader = {
                         type = responseTypeMapping[type];
                         if (type) {
                             return type.fn(res).then(response => {
-                                return {response: response, ts: null, type: type.id};
+                                return {response: response, ts: null, type: type.id, expectedRtCount: expectedCount};
                             }).catch(err => {
-                                return {response: null, ts: null, type: type.id, err: err};
+                                return {response: null, ts: null, type: type.id, err: err, expectedRtCount: expectedCount};
                             });
+                        } else if (expectedCount > 0) {
+                            console.log('WARN: discarding response containing rtData', expectedCount);
                         }
                     }
                 }
@@ -185,6 +195,7 @@ const fileReader = {
 
 const decompressFile = (cmdToStdout, sourceid) => {
     const uncompressedFile = conf.working_dir+sourceid+'.uncompressed';
+    //return Promise.resolve(uncompressedFile);
     return new Promise((done, failed) => {
         exec(cmdToStdout+" > "+uncompressedFile, (err, stdout, stderr) => {
             if (err) {
@@ -293,14 +304,14 @@ const parseLine = (line) => {
     }
 }
 
-const parseMetadata = (root) => {
+const parseMetadata = (root, trip_id, line) => {
     return {
-        trip_id: root.tripId,
+        trip_id: root.tripId || root.id || trip_id,
         remarks: root.remarks,
         cancelled: root.cancelled,
         loadFactor: root.loadFactor,
-        operator: parseOperator(root.line.operator),
-        ...parseLine(root.line)
+        operator: parseOperator((root.line || line).operator),
+        ...parseLine(root.line || line)
     }
 }
 
@@ -326,13 +337,15 @@ const parseArrival = (obj) => {
     }
 }
 
-const parseStopovers = (stopovers, destination, provenance, sample_time) => {
+const parseStopovers = (stopovers, destination, provenance, trip_id, line, sample_time, omit_start_end) => {
+    //omit_start_end = false;
     if (!stopovers) return [];
     const out = [];
-    for (let stopover of stopovers) {
+    for (let i=omit_start_end?1:0; i<stopovers.length-(omit_start_end?1:0); i++) {
+        let stopover = stopovers[i];
         if (stopover.departure) {
             out.push({
-                ...parseMetadata(stopover),
+                ...parseMetadata(stopover, trip_id, line),
                 stations: parseStations([stopover.stop]),
                 station_id: stopover.stop.id,
                 ...parseDeparture(stopover),
@@ -342,7 +355,7 @@ const parseStopovers = (stopovers, destination, provenance, sample_time) => {
         }
         if (stopover.arrival) {
             out.push({
-                ...parseMetadata(leg),
+                ...parseMetadata(stopover, trip_id, line),
                 stations: parseStations([stopover.stop]),
                 station_id: stopover.stop.id,
                 ...parseArrival(stopover),                    
@@ -371,8 +384,8 @@ const parseAlternatives = (alternatives, is_departure, sample_time, fallback_sta
             scheduled_platform: alt.plannedPlatform,
             projected_platform: alt.platform
         });
-        out.push(...parseStopovers(alt.previousStopovers, alt.origin, alt.destination, sample_time));
-        out.push(...parseStopovers(alt.nextStopovers, alt.origin, alt.destination, sample_time));    
+        out.push(...parseStopovers(alt.previousStopovers, alt.origin, alt.destination, alt.tripId, alt.line, sample_time, false));
+        out.push(...parseStopovers(alt.nextStopovers, alt.origin, alt.destination, alt.tripId, alt.line, sample_time, false));    
     }
     return out;
 }
@@ -396,13 +409,14 @@ const parseTrip = (trip, sample_time) => {
             destination_provenance: trip.origin,
         }
     ];
-    out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, sample_time));
+    out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, trip.id, trip.line, sample_time, true));
     out.push(...parseAlternatives(trip.alternatives, true, sample_time, trip.origin.id));
     return out;    
 }
 
 const parseJourneys = (journeys, sample_time) => {
     return journeys.map(journey => journey.legs.map(leg => {
+        if (leg.walking) return [];
         const out = [
             {
                 ...parseMetadata(leg),
@@ -421,7 +435,7 @@ const parseJourneys = (journeys, sample_time) => {
                 destination_provenance: null,
             }
         ];
-        out.push(...parseStopovers(leg.stopovers, null, null, sample_time));
+        out.push(...parseStopovers(leg.stopovers, null, null, leg.tripId, leg.line, sample_time, true));
         out.push(...parseAlternatives(leg.alternatives, true, sample_time, leg.origin.id));
         return out;
     }).flat()).flat();
@@ -433,22 +447,22 @@ const parseRt = (obj) => {
 
 const parser = {
     'journeys': (journeys) => parseJourneys(journeys.journeys, parseRt(journeys)),
-    'departures': (departures) => parseAlternatives(departures.departures, true, parseRt(departures)),
-    'arrivals': (arrivals) => parseAlternatives(arrivals.arrivals, false, parseRt(arrivals)),
+    'departures': (departures) => parseAlternatives(Array.isArray(departures) ? departures : departures.departures, true, parseRt(departures)),
+    'arrivals': (arrivals) => parseAlternatives(Array.isArray(arrivals) ? arrivals : arrivals.arrivals, false, parseRt(arrivals)),
     'trip': (trip) => parseTrip(trip.trip, parseRt(trip)),
     'refreshJourney': (journey) => parseJourneys([journey.journey], parseRt(journey))
 }
 
 const loadFiles = async (target, lastSuccessful) => {
     const lastSuccessfuls = {
-        0: null,
+        0: '/mnt/lfs/traines-stc/teak-mirror/a.v5.db.transport.rest.ndjson1669417200.bz2',
         1: '/mnt/lfs/traines-stc/tstp-raw-mirror/data.20221125.log.gz.gz',
         2: '/mnt/lfs/traines-stc/tstp-mirror/responses.big1669381989.ndgz'
     }
     const hashes = [];
     let remaining = true;
     for (const source of target.sources) {
-        if (source.sourceid == 0) continue;
+        if (source.sourceid != 0) continue;
         const it = responseReader(source, lastSuccessfuls[source.sourceid]);
         let result;
         let i = 0;
@@ -459,17 +473,36 @@ const loadFiles = async (target, lastSuccessful) => {
         let sum = 0;
         let duplicates = 0;
         while ((result = await it.next())) {
-            if (!result.type || !result.response) continue;
-            const hash = md5(JSON.stringify(result.response));
+            if (result.err) console.log(result.err);
+            if (!result.type || !result.response) {                            
+                if (result.expectedRtCount > 0) console.log('WARN: discarding response containing rtData', result.expectedRtCount);
+                continue;
+            }
+            const str = JSON.stringify(result.response);
+            const hash = md5(str);
             if (hashes[hash]) {
                 duplicates++;
                 continue;
             }
             hashes[hash] = source.sourceid;
+
+            /*f (result.type == 'departures') {
+                break;
+            }*/
+
+            const extracted = parser[result.type](result.response);
+            //console.log(extracted);
+           
+            const actualCount = extracted.filter(e => e.delay_minutes != null).length;
+            if (result.expectedRtCount != actualCount && result.type =="refreshJourney") {
+                console.log('noooooooooo', result.expectedRtCount, actualCount, extracted.length, result.type);//, JSON.stringify(result.response), extracted);
+                //break;
+            }
+            //break;
             
             if (result.response?.realtimeDataFrom || result.response?.realtimeDataUpdatedAt) {
                 w++;
-                const diff = result.ts?.getTime()/1000-(result.response.realtimeDataFrom || result.response.realtimeDataUpdatedAt);
+                const diff = result.ts?.getTime()/1000-(result.response.realtimeDataFrom || result.response.realtimeDataUpdatedAt.legs);
                 if (diff < min) min = diff;
                 if (diff > max) max = diff;
                 sum += diff;
