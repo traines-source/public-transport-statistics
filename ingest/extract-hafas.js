@@ -19,7 +19,6 @@ const createRequestMockClient = (baseProfile) => {
             errProps: {request: {}, response: b, url: ""}
         });
         const svcRes = b.svcResL[0].res;
-        //console.log(svcRes);
         return {
             res: svcRes,
             common: profile.parseCommon({...ctx, res: svcRes}),
@@ -28,22 +27,22 @@ const createRequestMockClient = (baseProfile) => {
     return createClient(profile, 'mock');
 }
 
-const client = createRequestMockClient(dbProfile);
+const hafasClient = createRequestMockClient(dbProfile);
 
 const responseTypeMapping = {
-    'DEP': {id: 'departures', fn: (resp) => client.departures(dummyStation, {responseData: resp})},
-    'ARR': {id: 'arrivals', fn: (resp) => client.arrivals(dummyStation, {responseData: resp})},
-    'JourneyDetails': {id: 'trip', fn: (resp) => client.trip('id', {responseData: resp, stopovers: true})},
-    'TripSearch': {id: 'journeys', fn: (resp) => client.journeys(dummyStation, dummyStation, {responseData: resp, stopovers: true})},
-    //'JourneyGeoPos': {id: 'radar', fn: (resp) => client.radar({north: 1, west: 0, south: 0, east: 1}, {responseData: resp})},
-    'Reconstruction': {id: 'refreshJourney', fn: (resp) => client.refreshJourney('token', {responseData: resp, stopovers: true})}
+    'DEP': {id: 'departures', fn: (resp) => hafasClient.departures(dummyStation, {responseData: resp})},
+    'ARR': {id: 'arrivals', fn: (resp) => hafasClient.arrivals(dummyStation, {responseData: resp})},
+    'JourneyDetails': {id: 'trip', fn: (resp) => hafasClient.trip('id', {responseData: resp, stopovers: true})},
+    'TripSearch': {id: 'journeys', fn: (resp) => hafasClient.journeys(dummyStation, dummyStation, {responseData: resp, stopovers: true})},
+    //'JourneyGeoPos': {id: 'radar', fn: (resp) => hafasClient.radar({north: 1, west: 0, south: 0, east: 1}, {responseData: resp})},
+    'Reconstruction': {id: 'refreshJourney', fn: (resp) => hafasClient.refreshJourney('token', {responseData: resp, stopovers: true})}
 }
 
 const countRt = (raw_utf8) => {
     return (raw_utf8.match(/TimeR/g) || []).length;
 }
 
-const parseHafasResponse = (line) => {
+const unmarshalHafasResponse = (line) => {
     const data = JSON.parse(line);
     if (Array.isArray(data) && data[1] == 'res') {
         return JSON.parse(data[2]);
@@ -64,9 +63,9 @@ const extractHafas = (file) => {
             let line;
             while (line = lines.next()) {
                 const raw_utf8 = line.toString('utf8');
-                const res = parseHafasResponse(raw_utf8);
-                const expectedCount = countRt(raw_utf8);
+                const res = unmarshalHafasResponse(raw_utf8);
                 if (res) {
+                    const expectedCount = countRt(raw_utf8);
                     let type = res.svcResL[0].meth;
                     if (type == 'StationBoard' && res.svcResL[0].res) type = res.svcResL[0].res.type;
                     
@@ -77,9 +76,8 @@ const extractHafas = (file) => {
                         }).catch(err => {
                             return {response: null, ts: null, type: type.id, err: err, expectedRtCount: expectedCount};
                         });
-                    } else if (expectedCount > 0) {
-                        console.log('WARN: discarding response containing rtData', expectedCount);
                     }
+                    return Promise.resolve({response: null, ts: null, type: null, err: null, expectedRtCount: expectedCount})
                 }
             }
             return Promise.resolve(null);

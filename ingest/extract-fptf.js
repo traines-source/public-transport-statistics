@@ -11,7 +11,7 @@ const parseLogLineMeta = (line) => {
     if (match) {
         const ts = parse(match[1], 'dd/MMM/yyyy:HH:mm:ss XXXX', new Date());
         if (ts) {
-            const type = match[2].match(/\/(departures|arrivals|trips|journeys|radar)/); //refreshJourney
+            const type = match[2].match(/\/(departures|arrivals|trips|journeys)/); //refreshJourney,radar
             return {ts: ts, type: type ? type[1] : type};
         }
     }
@@ -27,6 +27,7 @@ const assembleResponse = async (readLines) => {
     const meta = parseLogLineMeta(readLines[0]);
     let response;
     let expectedCount;
+    let err;
     try {
         const raw = await gzip.ungzip(Buffer.concat(concatLines));
         const raw_utf8 = raw.toString('utf-8');
@@ -34,8 +35,9 @@ const assembleResponse = async (readLines) => {
         response = JSON.parse(raw_utf8);
     } catch(e) {
         console.log(e)
+        err = e;
     }
-    return {response: response, ts: meta.ts, type: meta.type, expectedRtCount: expectedCount};
+    return {response: response, ts: meta.ts, type: meta.type, expectedRtCount: expectedCount, err: err};
 }
 
 const isNewEntry = (line) => {

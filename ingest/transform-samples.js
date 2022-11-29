@@ -181,7 +181,7 @@ const parseRt = (obj) => {
     return obj.realtimeDataUpdatedAt || obj.realtimeDataFrom;
 }
 
-const transformSample = {
+const transformSamples = {
     'journeys': (journeys) => parseJourneys(journeys.journeys, parseRt(journeys)),
     'departures': (departures) => parseAlternatives(Array.isArray(departures) ? departures : departures.departures, true, parseRt(departures)),
     'arrivals': (arrivals) => parseAlternatives(Array.isArray(arrivals) ? arrivals : arrivals.arrivals, false, parseRt(arrivals)),
@@ -190,5 +190,5 @@ const transformSample = {
 }
 
 export {
-    transformSample
+    transformSamples
 }
