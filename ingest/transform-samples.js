@@ -40,12 +40,12 @@ const parseLine = (line) => {
     }
 }
 
-const parseMetadata = (root, trip_id, line) => {
+const parseMetadata = (root, trip_id, line, load_factor) => {
     return {
         trip_id: root.tripId || root.id || trip_id,
         remarks: root.remarks,
         cancelled: root.cancelled,
-        loadFactor: root.loadFactor,
+        load_factor: load_factor || root.loadFactor,
         operator: parseOperator((root.line || line).operator),
         ...parseLine(root.line || line)
     }
@@ -56,7 +56,7 @@ const parseDeparture = (obj) => {
         scheduled_time: obj.plannedDeparture,
         projected_time: obj.departure,
         is_departure: true,
-        delay_minutes: obj.departureDelay,
+        delay_seconds: obj.departureDelay,
         scheduled_platform: obj.plannedDeparturePlatform,
         projected_platform: obj.departurePlatform
     }
@@ -67,7 +67,7 @@ const parseArrival = (obj) => {
         scheduled_time: obj.plannedArrival,
         projected_time: obj.arrival,
         is_departure: false,
-        delay_minutes: obj.arrivalDelay,
+        delay_seconds: obj.arrivalDelay,
         scheduled_platform: obj.plannedArrivalPlatform,
         projected_platform: obj.arrivalPlatform
     }
@@ -81,22 +81,22 @@ const parseStopovers = (stopovers, destination, provenance, trip_id, line, sampl
         let stopover = stopovers[i];
         if (stopover.departure) {
             out.push({
-                ...parseMetadata(stopover, trip_id, line),
+                ...parseMetadata(stopover, trip_id, line, stopover.stop.loadFactor),
                 stations: parseStations([stopover.stop]),
                 station_id: stopover.stop.id,
                 ...parseDeparture(stopover),
                 sample_time: sample_time,
-                destination_provenance: destination?.id,                
+                destination_provenance_id: destination?.id,                
             });
         }
         if (stopover.arrival) {
             out.push({
-                ...parseMetadata(stopover, trip_id, line),
+                ...parseMetadata(stopover, trip_id, line, stopover.stop.loadFactor),
                 stations: parseStations([stopover.stop]),
                 station_id: stopover.stop.id,
                 ...parseArrival(stopover),                    
                 sample_time: sample_time,
-                destination_provenance: provenance?.id,
+                destination_provenance_id: provenance?.id,
             });
         }
     }
@@ -108,15 +108,15 @@ const parseAlternatives = (alternatives, is_departure, sample_time, fallback_sta
     const out = [];
     for (let alt of alternatives) {
         out.push({
-            ...parseMetadata(alt),
+            ...parseMetadata(alt, null, null, alt.stop?.loadFactor),
             stations: parseStations([alt.stop, alt.destination, alt.origin]),
             station_id: alt.stop?.id || fallback_station_id,
             scheduled_time: alt.plannedWhen,
             projected_time: alt.when,
             is_departure: is_departure,
-            delay_minutes: alt.delay,
+            delay_seconds: alt.delay,
             sample_time: sample_time,
-            destination_provenance: (is_departure ? alt.destination : alt.origin)?.id,
+            destination_provenance_id: (is_departure ? alt.destination : alt.origin)?.id,
             scheduled_platform: alt.plannedPlatform,
             projected_platform: alt.platform
         });
@@ -129,20 +129,20 @@ const parseAlternatives = (alternatives, is_departure, sample_time, fallback_sta
 const parseTrip = (trip, sample_time) => {
     const out = [
         {
-            ...parseMetadata(trip),
+            ...parseMetadata(trip, null, null, trip.origin.loadFactor),
             stations: parseStations([trip.origin]),
             station_id: trip.origin.id,
             ...parseDeparture(trip),
             sample_time: sample_time,
-            destination_provenance: trip.destination,                
+            destination_provenance_id: trip.destination,                
         },
         {
-            ...parseMetadata(trip),
+            ...parseMetadata(trip, null, null, trip.destination.loadFactor),
             stations: parseStations([trip.destination]),
             station_id: trip.destination.id,
             ...parseArrival(trip),                    
             sample_time: sample_time,
-            destination_provenance: trip.origin,
+            destination_provenance_id: trip.origin,
         }
     ];
     out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, trip.id, trip.line, sample_time, true));
@@ -155,20 +155,20 @@ const parseJourneys = (journeys, sample_time) => {
         if (leg.walking) return [];
         const out = [
             {
-                ...parseMetadata(leg),
+                ...parseMetadata(leg, null, null, leg.origin.loadFactor),
                 stations: parseStations([leg.origin]),
                 station_id: leg.origin.id,
                 ...parseDeparture(leg),
                 sample_time: sample_time,
-                destination_provenance: null,                
+                destination_provenance_id: null,                
             },
             {
-                ...parseMetadata(leg),
+                ...parseMetadata(leg, null, null, leg.origin.loadFactor),
                 stations: parseStations([leg.destination]),
                 station_id: leg.destination.id,
                 ...parseArrival(leg),                    
                 sample_time: sample_time,
-                destination_provenance: null,
+                destination_provenance_id: null,
             }
         ];
         out.push(...parseStopovers(leg.stopovers, null, null, leg.tripId, leg.line, sample_time, true));
