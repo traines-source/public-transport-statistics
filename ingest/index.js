@@ -1,5 +1,7 @@
 
 import md5 from 'md5'
+import fs from 'fs'
+
 import {responseReader} from './read-response.js'
 import {transformSamples} from './transform-samples.js'
 import db from './db.js'
@@ -32,7 +34,7 @@ const formatStation = (station) => {
     return station;
 }
 
-const formatResponse = (result, hash, source, sampleCount) => {
+const formatResponse = (result, hash, source, sampleCount, rtTime) => {
     const typeIds = {
         'journeys': 0,
         'departures': 1,
@@ -44,6 +46,7 @@ const formatResponse = (result, hash, source, sampleCount) => {
         hash: hash,
         type: typeIds[result.type],
         response_time: result.ts,
+        rt_time: rtTime,
         source: source.sourceid,
         sample_count: sampleCount
     };
@@ -100,12 +103,9 @@ const insertMissing = async (foreignField, insertFct, schema) => {
 }
 
 const processSamples = async (target) => {
-    const lastSuccessfuls = {
-        0: '/mnt/lfs/traines-stc/teak-mirror/a.v5.db.transport.rest.ndjson1669417200.bz2',
-        1: '/mnt/lfs/traines-stc/tstp-raw-mirror/data.20221125.log.gz.gz',
-        2: '/mnt/lfs/traines-stc/tstp-mirror/responses.big1669381989.ndgz'
-    }
-    const hashes = [];
+    const responseHashes = {};
+    const sampleHashes = {};
+    let errorOccurred = false;
     const foreignFields = {
         operator: { existing: await db.getOperatorMap(target.schema), missing: {} },
         load_factor: { existing: await db.getLoadFactorMap(target.schema), missing: {} },
@@ -114,7 +114,7 @@ const processSamples = async (target) => {
     for (const source of target.sources) {
         if (source.disabled) continue;
 
-        const it = responseReader(source, lastSuccessfuls[source.sourceid]);
+        const it = responseReader(source, target.schema, true);
 
         let result;
         let rtDiffMin = 1000;
@@ -133,7 +133,8 @@ const processSamples = async (target) => {
             persisted: 0,
             outside24h: 0,
             missingSampleTime: 0,
-            skipped: 0
+            skipped: 0,
+            sampleDuplicates: 0
         }
 
         while ((result = await it.next())) {
@@ -142,11 +143,11 @@ const processSamples = async (target) => {
             }
             const str = JSON.stringify(result.response);
             const hash = md5(str);
-            if (hashes[hash]) {
+            if (responseHashes[hash]) {
                 ctrs.duplicates++;
                 continue;
             }
-            hashes[hash] = source.sourceid;
+            responseHashes[hash] = true;
             ctrs.validResponses++;
 
             const samples = transformSamples[result.type](result.response);
@@ -163,9 +164,10 @@ const processSamples = async (target) => {
             //console.log(extracted);
             //break;
 
-            if (result.response?.realtimeDataFrom || result.response?.realtimeDataUpdatedAt) {
+            const rtTime = result.response?.realtimeDataFrom || result.response?.realtimeDataUpdatedAt;
+            if (rtTime) {
                 rtDiffCount++;
-                const diff = result.ts?.getTime()/1000-(result.response.realtimeDataFrom || result.response.realtimeDataUpdatedAt.legs);
+                const diff = result.ts?.getTime()/1000-(rtTime);
                 if (diff < rtDiffMin) rtDiffMin = diff;
                 if (diff > rtDiffMax) rtDiffMax = diff;
                 rtDiffSum += diff;
@@ -177,6 +179,13 @@ const processSamples = async (target) => {
                 if (!sample.sample_time) {
                     sample.sample_time = result.ts?.getTime()/1000-fallbackRtDiff;
                 }
+                const sampleHash = md5(JSON.stringify(sample));
+                if (sampleHashes[sampleHash]) {
+                    ctrs.sampleDuplicates++;
+                    continue;
+                }
+                sampleHashes[sampleHash] = true;
+                
                 sample = formatSample(sample);
                 if (Math.abs(sample.ttl_minutes) > 24*60) {
                     ctrs.outside24h++;
@@ -207,7 +216,7 @@ const processSamples = async (target) => {
                     await db.upsertStations(target.schema, relevantStationList);
                 }
 
-                const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length));
+                const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime ? new Date(rtTime*1000) : null));
 
                 for (let sample of relevantSamples) {
                     sample.response_id = responseId;
@@ -223,20 +232,27 @@ const processSamples = async (target) => {
                 ctrs.persisted += relevantSamples.length;
             } catch (err) {
                 await db.rollback();
-                if (err.constraint != 'hash' && err.table != 'response_log') {
+                if (err.table != 'response_log' || err.constraint != 'hash') {
                     console.log(relevantStations);
                     console.log(relevantSamples);
                     console.log(err);
+                    fs.writeFileSync(conf.working_dir+'err_dump.json', JSON.stringify([relevantStations, relevantSamples, err]));
+                    errorOccurred = true;
                     break;
                 } else {
                     console.log('Skipping response.');
                     ctrs.skipped += relevantSamples.length;
                 }
             }
+            console.log('counters:', ctrs);
         }       
 
         console.log('counters:', ctrs);
         console.log('rtDiff minmaxavg', rtDiffMin, rtDiffMax, rtDiffSum/rtDiffCount);
+        if (errorOccurred) {
+            console.log('TERMINATING due to error.');
+            break;
+        }
     }
 }
 

@@ -1,4 +1,6 @@
 import glob from 'glob'
+import fs from 'fs'
+
 import {exec} from 'child_process';
 
 import {extractHafas} from './extract-hafas.js'
@@ -55,6 +57,17 @@ const fileLoader = {
     'gzip-single': (file, sourceid) => Promise.resolve(file)
 }
 
+const updateLastSuccessful = (lastFile, source, target, update) => {
+    const checkpointFile = conf.working_dir+'lastSuccessfuls.json';
+    const identifier = target+'-'+source.sourceid;
+    let checkpoints = JSON.parse(fs.readFileSync(checkpointFile));
+    if (lastFile) {
+        checkpoints[identifier] = lastFile;
+        if (update) fs.writeFileSync(checkpointFile, JSON.stringify(checkpoints));
+    }
+    return checkpoints[identifier];
+}
+
 const findAndOpenNextFile = async (source, lastSuccessful) => {
     let file = await findNextFile(source, lastSuccessful);
     console.log(file);
@@ -64,17 +77,19 @@ const findAndOpenNextFile = async (source, lastSuccessful) => {
     return {file: file, fileReader: fileReader[source.type](loadedFile)};
 }
 
-const responseReader = (source, lastSuccessful) => {
+const responseReader = (source, target, update) => {
     let iterator;
+    let lastFile;
     let i = 0;
     return {
         next: () => {
             return new Promise((done, failed) => {
                 const renewIterator = () => {
                     console.log(i);
+                    const lastSuccessful = updateLastSuccessful(lastFile, source, target, update);
                     findAndOpenNextFile(source, lastSuccessful).then(({file, fileReader}) => {
                         iterator = fileReader;
-                        lastSuccessful = file;
+                        lastFile = file;
                         if (!iterator) {
                             done(null);
                             return;
@@ -88,8 +103,8 @@ const responseReader = (source, lastSuccessful) => {
                         if (value) {
                             done(value);
                         } else {
-                            done(null);
-                            //renewIterator();
+                            //done(null);
+                            renewIterator();
                         }
                     });
                 }

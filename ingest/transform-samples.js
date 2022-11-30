@@ -134,7 +134,7 @@ const parseTrip = (trip, sample_time) => {
             station_id: trip.origin.id,
             ...parseDeparture(trip),
             sample_time: sample_time,
-            destination_provenance_id: trip.destination,                
+            destination_provenance_id: trip.destination?.id,                
         },
         {
             ...parseMetadata(trip, null, null, trip.destination.loadFactor),
@@ -142,7 +142,7 @@ const parseTrip = (trip, sample_time) => {
             station_id: trip.destination.id,
             ...parseArrival(trip),                    
             sample_time: sample_time,
-            destination_provenance_id: trip.origin,
+            destination_provenance_id: trip.origin?.id,
         }
     ];
     out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, trip.id, trip.line, sample_time, true));

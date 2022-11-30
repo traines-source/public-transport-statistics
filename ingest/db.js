@@ -43,9 +43,7 @@ const insertLoadFactors = (schema, values) => {
 }
 
 const insertSingleColWithAutoincrement = async (schema, table, pk_col, map_key_col, values) => {
-    console.log('insert', values);
     const fmt = insertFormat([map_key_col], values);
-    console.log(fmt);
     const result = await pgc.query('INSERT INTO '+schema+'.'+table+' ('+fmt.cols+') VALUES '+fmt.format+' RETURNING '+pk_col+','+map_key_col, values);
     return toKvMap(result.rows, map_key_col, pk_col);    
 }
@@ -61,7 +59,7 @@ const upsertStations = async (schema, o) => {
 }
 
 const insertResponse = async (schema, response) => {
-    const fmt = insertFormat(['hash', 'type', 'response_time', 'source', 'sample_count'], [response]);
+    const fmt = insertFormat(['hash', 'type', 'response_time', 'rt_time', 'source', 'sample_count'], [response]);
     const r = await pgc.query('INSERT INTO '+schema+'.response_log ('+fmt.cols+') VALUES '+fmt.format+' RETURNING response_id', fmt.values);
     return r.rows[0].response_id;
 }
