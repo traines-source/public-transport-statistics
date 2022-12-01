@@ -40,11 +40,11 @@ const parseLine = (line) => {
     }
 }
 
-const parseMetadata = (root, trip_id, line, load_factor) => {
+const parseMetadata = (root, trip_id, line, load_factor, projected) => {
     return {
         trip_id: root.tripId || root.id || trip_id,
         remarks: root.remarks,
-        cancelled: root.cancelled,
+        cancelled: root.cancelled && !projected,
         load_factor: load_factor || root.loadFactor,
         operator: parseOperator((root.line || line).operator),
         ...parseLine(root.line || line)
@@ -79,7 +79,7 @@ const parseStopovers = (stopovers, destination, provenance, trip_id, line, sampl
     const out = [];
     for (let i=omit_start_end?1:0; i<stopovers.length-(omit_start_end?1:0); i++) {
         let stopover = stopovers[i];
-        if (stopover.departure) {
+        if (stopover.plannedDeparture) {
             out.push({
                 ...parseMetadata(stopover, trip_id, line, stopover.stop.loadFactor),
                 stations: parseStations([stopover.stop]),
@@ -89,7 +89,7 @@ const parseStopovers = (stopovers, destination, provenance, trip_id, line, sampl
                 destination_provenance_id: destination?.id,                
             });
         }
-        if (stopover.arrival) {
+        if (stopover.plannedArrival) {
             out.push({
                 ...parseMetadata(stopover, trip_id, line, stopover.stop.loadFactor),
                 stations: parseStations([stopover.stop]),
@@ -127,25 +127,29 @@ const parseAlternatives = (alternatives, is_departure, sample_time, fallback_sta
 }
 
 const parseTrip = (trip, sample_time) => {
-    const out = [
-        {
-            ...parseMetadata(trip, null, null, trip.origin.loadFactor),
-            stations: parseStations([trip.origin]),
-            station_id: trip.origin.id,
-            ...parseDeparture(trip),
-            sample_time: sample_time,
-            destination_provenance_id: trip.destination?.id,                
-        },
-        {
-            ...parseMetadata(trip, null, null, trip.destination.loadFactor),
-            stations: parseStations([trip.destination]),
-            station_id: trip.destination.id,
-            ...parseArrival(trip),                    
-            sample_time: sample_time,
-            destination_provenance_id: trip.origin?.id,
-        }
-    ];
-    out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, trip.id, trip.line, sample_time, true));
+    const out = [];
+    if (!trip.stopovers?.length) {
+        out.push(
+            {
+                ...parseMetadata(trip, null, null, trip.origin.loadFactor, trip.departure),
+                stations: parseStations([trip.origin]),
+                station_id: trip.origin.id,
+                ...parseDeparture(trip),
+                sample_time: sample_time,
+                destination_provenance_id: trip.destination?.id,                
+            },
+            {
+                ...parseMetadata(trip, null, null, trip.destination.loadFactor, trip.arrival),
+                stations: parseStations([trip.destination]),
+                station_id: trip.destination.id,
+                ...parseArrival(trip),                    
+                sample_time: sample_time,
+                destination_provenance_id: trip.origin?.id,
+            }
+        );
+    } else {
+        out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, trip.id, trip.line, sample_time, false));
+    }
     out.push(...parseAlternatives(trip.alternatives, true, sample_time, trip.origin.id));
     return out;    
 }
@@ -155,7 +159,7 @@ const parseJourneys = (journeys, sample_time) => {
         if (leg.walking) return [];
         const out = [
             {
-                ...parseMetadata(leg, null, null, leg.origin.loadFactor),
+                ...parseMetadata(leg, null, null, leg.origin.loadFactor, leg.departure),
                 stations: parseStations([leg.origin]),
                 station_id: leg.origin.id,
                 ...parseDeparture(leg),
@@ -163,7 +167,7 @@ const parseJourneys = (journeys, sample_time) => {
                 destination_provenance_id: null,                
             },
             {
-                ...parseMetadata(leg, null, null, leg.origin.loadFactor),
+                ...parseMetadata(leg, null, null, leg.destination.loadFactor, leg.arrival),
                 stations: parseStations([leg.destination]),
                 station_id: leg.destination.id,
                 ...parseArrival(leg),                    

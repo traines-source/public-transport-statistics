@@ -55,7 +55,7 @@ const formatResponse = (result, hash, source, sampleCount, rtTime) => {
 const formatSample = (sample) => {
     //sample.id
     sample.scheduled_time = new Date(sample.scheduled_time);
-    sample.projected_time = new Date(sample.projected_time);
+    if (sample.projected_time) sample.projected_time = new Date(sample.projected_time);
     sample.year = sample.scheduled_time.getUTCFullYear();
     sample.month = sample.scheduled_time.getUTCMonth()+1;
     sample.day = sample.scheduled_time.getUTCDate();
@@ -74,7 +74,7 @@ const formatSample = (sample) => {
     sample.cancelled = !!sample.cancelled;
     //sample.stop_number
     if (sample.sample_time) sample.sample_time = new Date(sample.sample_time*1000);
-    if (sample.sample_time) sample.ttl_minutes = Math.round((sample.projected_time.getTime()-sample.sample_time.getTime())/1000/60);
+    if (sample.sample_time) sample.ttl_minutes = Math.round(((sample.projected_time || sample.scheduled_time).getTime()-sample.sample_time.getTime())/1000/60);
     //sample.operator_id
     if (sample.destination_provenance_id) sample.destination_provenance_id = parseInt(sample.destination_provenance_id);
     //sample.scheduled_platform
@@ -130,9 +130,14 @@ const processSamples = async (target) => {
             samples: 0,
             rtSamples: 0,
             incorrectRtCount: 0,
+            missingRts: 0,
+            excessRts: 0,
             persisted: 0,
             outside24h: 0,
+            outside24hWithRt: 0,
+            outside6Months: 0,
             missingSampleTime: 0,
+            fallbackSampleTime: 0,
             skipped: 0,
             sampleDuplicates: 0
         }
@@ -158,8 +163,10 @@ const processSamples = async (target) => {
            
             if (result.expectedRtCount != actualCount) {
                 ctrs.incorrectRtCount++;
-                //console.log('incorrectRtCount:', result.expectedRtCount, actualCount, extracted.length, result.type);//, JSON.stringify(result.response), extracted);
-                //break;
+                const d = result.expectedRtCount - actualCount;
+                if (d > 0) ctrs.missingRts += d;
+                if (d < 0) ctrs.excessRts -= d
+                //console.log('incorrectRtCount:', result.expectedRtCount, actualCount, samples.length, result.type);//, JSON.stringify(result.response), extracted);
             }
             //console.log(extracted);
             //break;
@@ -178,6 +185,11 @@ const processSamples = async (target) => {
             for (let sample of samples) {
                 if (!sample.sample_time) {
                     sample.sample_time = result.ts?.getTime()/1000-fallbackRtDiff;
+                    ctrs.fallbackSampleTime++;
+                }
+                if (!sample.sample_time) {
+                    ctrs.missingSampleTime++;
+                    continue;
                 }
                 const sampleHash = md5(JSON.stringify(sample));
                 if (sampleHashes[sampleHash]) {
@@ -189,12 +201,11 @@ const processSamples = async (target) => {
                 sample = formatSample(sample);
                 if (Math.abs(sample.ttl_minutes) > 24*60) {
                     ctrs.outside24h++;
+                    if (result.delay_minutes != null) ctrs.outside24hWithRt++;
+                    if (Math.abs(sample.ttl_minutes) > 6*30*24*60) ctrs.outside6Months++;
                     continue;
                 }
-                if (!sample.sample_time) {
-                    ctrs.missingSampleTime++;
-                    continue;
-                }                
+                              
                 relevantSamples.push(sample);
 
                 for (let station of sample.stations) {
@@ -233,10 +244,8 @@ const processSamples = async (target) => {
             } catch (err) {
                 await db.rollback();
                 if (err.table != 'response_log' || err.constraint != 'hash') {
-                    console.log(relevantStations);
-                    console.log(relevantSamples);
                     console.log(err);
-                    fs.writeFileSync(conf.working_dir+'err_dump.json', JSON.stringify([relevantStations, relevantSamples, err]));
+                    fs.writeFileSync(conf.working_dir+'err_dump.json', JSON.stringify([result.response, relevantStations, relevantSamples, err], null, 2));
                     errorOccurred = true;
                     break;
                 } else {
@@ -244,7 +253,6 @@ const processSamples = async (target) => {
                     ctrs.skipped += relevantSamples.length;
                 }
             }
-            console.log('counters:', ctrs);
         }       
 
         console.log('counters:', ctrs);
