@@ -139,7 +139,9 @@ const processSamples = async (target) => {
             missingSampleTime: 0,
             fallbackSampleTime: 0,
             skipped: 0,
-            sampleDuplicates: 0
+            sampleDuplicates: 0,
+            remarks: 0,
+            cancelled: 0,
         }
 
         while ((result = await it.next())) {
@@ -205,6 +207,9 @@ const processSamples = async (target) => {
                     if (Math.abs(sample.ttl_minutes) > 6*30*24*60) ctrs.outside6Months++;
                     continue;
                 }
+
+                if (sample.remarks?.length) ctrs.remarks++;
+                if (sample.cancelled) ctrs.cancelled++;
                               
                 relevantSamples.push(sample);
 
@@ -216,7 +221,7 @@ const processSamples = async (target) => {
                 setIfMissing(foreignFields.load_factor, sample.load_factor, sample.load_factor);
                 setIfMissing(foreignFields.product_type, sample.product_type, sample.product_type);
             }
-
+            
             try {
                 await db.begin();
                 await insertMissing(foreignFields.operator, db.insertOperators, target.schema);
