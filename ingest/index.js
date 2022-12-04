@@ -20,6 +20,10 @@ const validateResult = (result, ctrs) => {
         if (result.expectedRtCount > 0) console.log('WARN: discarding response containing rtData', result.expectedRtCount);
         return false;
     }
+    if (result.type == 'radar' || result.type == 'location') {
+        ctrs.typeRadarOrLocation++;
+        return false;
+    }
     if (!result.response) {
         ctrs.emptyResponses++;
         return false;
@@ -36,11 +40,11 @@ const formatStation = (station) => {
 
 const formatResponse = (result, hash, source, sampleCount, rtTime) => {
     const typeIds = {
-        'journeys': 0,
-        'departures': 1,
-        'arrivals': 2,
-        'trip': 3,
-        'refreshJourney': 4
+        "journeys": 0,
+        "departures": 1,
+        "arrivals": 2,
+        "trip": 3,
+        "refreshJourney": 4
     }
     return {
         hash: hash,
@@ -119,6 +123,7 @@ const processSamples = async (target) => {
         const ctrs = {
             errors: 0,
             unknownTypes: 0,
+            typeRadarOrLocation: 0,
             emptyResponses: 0,
             duplicates: 0,
             validResponses: 0,
@@ -137,9 +142,16 @@ const processSamples = async (target) => {
             sampleDuplicates: 0,
             remarks: 0,
             cancelled: 0,
+            perf_read: 0,
+            perf_parse: 0,
+            perf_persist: 0,
+            perf_ctr: 0,
         }
-
+        let perf_start = performance.now();
         while ((result = await it.next())) {
+            ctrs.perf_read += performance.now()-perf_start;
+            ctrs.perf_ctr++;
+            perf_start = performance.now();
             if (!validateResult(result, ctrs)) {
                 continue;
             }
@@ -223,6 +235,10 @@ const processSamples = async (target) => {
                 setIfMissing(foreignFields.load_factor, sample.load_factor, sample.load_factor);
                 setIfMissing(foreignFields.product_type, sample.product_type, sample.product_type);
             }
+
+            ctrs.perf_parse += performance.now()-perf_start;
+            ctrs.perf_ctr++;
+            perf_start = performance.now();
             
             try {
                 await db.begin();
@@ -237,16 +253,14 @@ const processSamples = async (target) => {
                 if (relevantRemarksList.length > 0) {
                     await db.upsertRemarks(target.schema, relevantRemarksList);
                 }
-
-                const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime));
-
-                for (let sample of relevantSamples) {
-                    sample.response_id = responseId;
-                    sample.operator_id = foreignFields.operator.existing[sample.operator?.id];
-                    sample.load_factor_id = foreignFields.load_factor.existing[sample.load_factor];
-                    sample.product_type_id = foreignFields.product_type.existing[sample.product_type];
-                }
                 if (relevantSamples.length > 0) {
+                    const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime));
+                    for (let sample of relevantSamples) {
+                        sample.response_id = responseId;
+                        sample.operator_id = foreignFields.operator.existing[sample.operator?.id];
+                        sample.load_factor_id = foreignFields.load_factor.existing[sample.load_factor];
+                        sample.product_type_id = foreignFields.product_type.existing[sample.product_type];
+                    }
                     await db.insertSamples(target.schema, relevantSamples);
                 }
                 await db.commit();
@@ -260,13 +274,25 @@ const processSamples = async (target) => {
                     errorOccurred = true;
                     break;
                 } else {
-                    console.log('Skipping response.');
+                    console.log('Skipping response already stored.');
                     ctrs.skipped += relevantSamples.length;
                 }
             }
-        }       
+                
+            ctrs.perf_persist += performance.now()-perf_start;
+            ctrs.perf_ctr++;
+            perf_start = performance.now();
+            if (ctrs.validResponses % 10000 == 0) {
+                console.log('counters:', ctrs, new Date());
+                console.log('perf', ctrs.perf_read/ctrs.perf_ctr, ctrs.perf_parse/ctrs.perf_ctr, ctrs.perf_persist/ctrs.perf_ctr);
+                ctrs.perf_read = 0;
+                ctrs.perf_parse = 0;
+                ctrs.perf_persist = 0;
+                ctrs.perf_ctr = 0;
+            }
+        }
 
-        console.log('counters:', ctrs);
+        console.log('counters:', ctrs, new Date());
         console.log('rtDiff minmaxavg', rtDiffMin, rtDiffMax, rtDiffSum/rtDiffCount);
         if (errorOccurred) {
             console.log('TERMINATING due to error.');

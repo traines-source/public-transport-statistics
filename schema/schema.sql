@@ -2,8 +2,8 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 12.2 (Debian 12.2-2.pgdg100+1)
--- Dumped by pg_dump version 12.2 (Debian 12.2-2.pgdg100+1)
+-- Dumped from database version 15.1 (Debian 15.1-1.pgdg110+1)
+-- Dumped by pg_dump version 15.1 (Debian 15.1-1.pgdg110+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -102,6 +102,25 @@ CAST(
 ALTER FUNCTION db.delay_bucket_range(val smallint) OWNER TO "public-transport-stats";
 
 --
+-- Name: response_type_name(smallint); Type: FUNCTION; Schema: db; Owner: public-transport-stats
+--
+
+CREATE FUNCTION db.response_type_name(val smallint) RETURNS text
+    LANGUAGE sql
+    AS $$SELECT key FROM
+json_each('{
+	    "journeys": 0,
+        "departures": 1,
+        "arrivals": 2,
+        "trip": 3,
+        "refreshJourney": 4
+}')
+WHERE value::text = val::text$$;
+
+
+ALTER FUNCTION db.response_type_name(val smallint) OWNER TO "public-transport-stats";
+
+--
 -- Name: ttl_bucket(smallint); Type: FUNCTION; Schema: db; Owner: public-transport-stats
 --
 
@@ -196,6 +215,33 @@ ALTER TABLE db.load_factor_load_factor_id_seq OWNER TO "public-transport-stats";
 
 ALTER SEQUENCE db.load_factor_load_factor_id_seq OWNED BY db.load_factor.load_factor_id;
 
+
+--
+-- Name: official_delay_stats; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.official_delay_stats (
+    year smallint NOT NULL,
+    month smallint NOT NULL,
+    delay_percentage_5min real NOT NULL,
+    delay_percentage_15min real NOT NULL,
+    category text NOT NULL
+);
+
+
+ALTER TABLE db.official_delay_stats OWNER TO "public-transport-stats";
+
+--
+-- Name: official_delay_stats_operators; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.official_delay_stats_operators (
+    category text NOT NULL,
+    operator text NOT NULL
+);
+
+
+ALTER TABLE db.official_delay_stats_operators OWNER TO "public-transport-stats";
 
 --
 -- Name: operator; Type: TABLE; Schema: db; Owner: public-transport-stats
@@ -331,9 +377,9 @@ CREATE TABLE db.sample (
     sample_time timestamp with time zone NOT NULL,
     ttl_minutes smallint NOT NULL,
     trip_id text NOT NULL,
-    line_name text NOT NULL,
-    line_fahrtnr integer NOT NULL,
-    product_type_id smallint NOT NULL,
+    line_name text,
+    line_fahrtnr integer,
+    product_type_id smallint,
     product_name text,
     station_id integer NOT NULL,
     operator_id smallint,
@@ -534,6 +580,14 @@ ALTER TABLE ONLY db.load_factor
 
 
 --
+-- Name: official_delay_stats_operators official_delay_stats_operators_pk; Type: CONSTRAINT; Schema: db; Owner: public-transport-stats
+--
+
+ALTER TABLE ONLY db.official_delay_stats_operators
+    ADD CONSTRAINT official_delay_stats_operators_pk PRIMARY KEY (category, operator);
+
+
+--
 -- Name: operator operator_id; Type: CONSTRAINT; Schema: db; Owner: public-transport-stats
 --
 
@@ -547,6 +601,14 @@ ALTER TABLE ONLY db.operator
 
 ALTER TABLE ONLY db.operator
     ADD CONSTRAINT operator_pkey PRIMARY KEY (operator_id);
+
+
+--
+-- Name: official_delay_stats pk; Type: CONSTRAINT; Schema: db; Owner: public-transport-stats
+--
+
+ALTER TABLE ONLY db.official_delay_stats
+    ADD CONSTRAINT pk PRIMARY KEY (year, month, category);
 
 
 --
@@ -622,6 +684,14 @@ ALTER TABLE ONLY db.sample
 
 
 --
+-- Name: official_delay_stats_operators operator; Type: FK CONSTRAINT; Schema: db; Owner: public-transport-stats
+--
+
+ALTER TABLE ONLY db.official_delay_stats_operators
+    ADD CONSTRAINT operator FOREIGN KEY (operator) REFERENCES db.operator(id) NOT VALID;
+
+
+--
 -- Name: sample operator_id; Type: FK CONSTRAINT; Schema: db; Owner: public-transport-stats
 --
 
@@ -684,6 +754,20 @@ GRANT SELECT ON TABLE db.load_factor TO "public-transport-stats-read";
 
 
 --
+-- Name: TABLE official_delay_stats; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE db.official_delay_stats TO "public-transport-stats-read";
+
+
+--
+-- Name: TABLE official_delay_stats_operators; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE db.official_delay_stats_operators TO "public-transport-stats-read";
+
+
+--
 -- Name: TABLE operator; Type: ACL; Schema: db; Owner: public-transport-stats
 --
 
@@ -736,7 +820,6 @@ GRANT SELECT ON TABLE db.station TO "public-transport-stats-read";
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: db; Owner: postgres
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA db REVOKE ALL ON SEQUENCES  FROM postgres;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA db GRANT SELECT ON SEQUENCES  TO "public-transport-stats-read";
 
 
@@ -744,7 +827,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA db GRANT SELECT ON SEQUENCE
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: db; Owner: postgres
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA db REVOKE ALL ON TABLES  FROM postgres;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA db GRANT SELECT ON TABLES  TO "public-transport-stats-read";
 
 

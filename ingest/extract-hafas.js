@@ -66,7 +66,7 @@ const extractHafas = (file) => {
                 const res = unmarshalHafasResponse(raw_utf8);
                 if (res) {
                     const expectedCount = countRt(raw_utf8);
-                    let type = res.svcResL[0].meth;
+                    let type = res.svcResL ? res.svcResL[0]?.meth : null;
                     if (type == 'StationBoard' && res.svcResL[0].res) type = res.svcResL[0].res.type;
                     
                     type = responseTypeMapping[type];
@@ -77,7 +77,10 @@ const extractHafas = (file) => {
                             return {response: null, ts: null, type: type.id, err: err, expectedRtCount: expectedCount};
                         });
                     }
-                    return Promise.resolve({response: null, ts: null, type: null, err: null, expectedRtCount: expectedCount})
+                    let ctrsType = null;
+                    if (res.svcResL && res.svcResL[0].meth == 'JourneyGeoPos') ctrsType = 'radar';
+                    if (res.svcResL && res.svcResL[0].meth == 'LocMatch') ctrsType = 'location';
+                    return Promise.resolve({response: null, ts: null, type: ctrsType, err: null, expectedRtCount: expectedCount})
                 }
             }
             return Promise.resolve(null);
