@@ -37,7 +37,7 @@ const assembleResponse = async (readLines) => {
         console.log(e)
         err = e;
     }
-    return {response: response, ts: meta.ts, type: meta.type, expectedRtCount: expectedCount, err: err};
+    return {response: response, ts: meta?.ts, type: meta?.type, expectedRtCount: expectedCount, err: err};
 }
 
 const isNewEntry = (line) => {

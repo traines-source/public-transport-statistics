@@ -58,6 +58,11 @@ const upsertStations = async (schema, o) => {
     await pgc.query('INSERT INTO '+schema+'.station ('+fmt.cols+') VALUES '+fmt.format+' ON CONFLICT (station_id) DO NOTHING', fmt.values);   
 }
 
+const upsertRemarks = async (schema, o) => {
+    const fmt = insertFormat(['remarks_hash', 'remarks'], o);
+    await pgc.query('INSERT INTO '+schema+'.remarks ('+fmt.cols+') VALUES '+fmt.format+' ON CONFLICT (remarks_hash) DO NOTHING', fmt.values);   
+}
+
 const insertResponse = async (schema, response) => {
     const fmt = insertFormat(['hash', 'type', 'response_time', 'rt_time', 'source', 'sample_count'], [response]);
     const r = await pgc.query('INSERT INTO '+schema+'.response_log ('+fmt.cols+') VALUES '+fmt.format+' RETURNING response_id', fmt.values);
@@ -66,7 +71,7 @@ const insertResponse = async (schema, response) => {
 
 const insertSamples = async (schema, samples) => {
     const fmt = insertFormat(
-        ['year', 'month', 'day', 'day_of_week', 'hour', 'minute', 'trip_id', 'line_name', 'line_fahrtnr', 'product_type_id', 'product_name', 'station_id', 'scheduled_time', 'projected_time', 'is_departure', 'delay_minutes', 'remarks', 'cancelled', 'sample_time', 'ttl_minutes', 'operator_id', 'destination_provenance_id', 'scheduled_platform', 'projected_platform', 'load_factor_id', 'response_id'],
+        ['scheduled_time', 'projected_time', 'delay_minutes', 'cancelled', 'sample_time', 'ttl_minutes', 'trip_id', 'line_name', 'line_fahrtnr', 'product_type_id', 'product_name', 'station_id', 'operator_id', 'is_departure', 'remarks_hash', 'destination_provenance_id', 'scheduled_platform', 'projected_platform', 'load_factor_id', 'response_id'],
         samples
     );
     await pgc.query('INSERT INTO '+schema+'.sample ('+fmt.cols+') VALUES '+fmt.format, fmt.values);
@@ -118,6 +123,7 @@ export default {
     insertProductTypes,
     insertLoadFactors,
     upsertStations,
+    upsertRemarks,
     insertResponse,
     insertSamples,
     begin,

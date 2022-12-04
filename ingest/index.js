@@ -56,26 +56,20 @@ const formatSample = (sample) => {
     //sample.id
     sample.scheduled_time = new Date(sample.scheduled_time);
     if (sample.projected_time) sample.projected_time = new Date(sample.projected_time);
-    sample.year = sample.scheduled_time.getUTCFullYear();
-    sample.month = sample.scheduled_time.getUTCMonth()+1;
-    sample.day = sample.scheduled_time.getUTCDate();
-    sample.day_of_week = sample.scheduled_time.getUTCDay();
-    sample.hour = sample.scheduled_time.getUTCHours();
-    sample.minute = sample.scheduled_time.getUTCMinutes();
+    if (sample.delay_seconds != null) sample.delay_minutes = Math.round(sample.delay_seconds/60);
+    sample.cancelled = !!sample.cancelled;
+    if (sample.sample_time) sample.sample_time = new Date(sample.sample_time*1000);
+    if (sample.sample_time) sample.ttl_minutes = Math.round(((sample.projected_time || sample.scheduled_time).getTime()-sample.sample_time.getTime())/1000/60);
     //sample.trip_id
     //sample.line_name
     sample.line_fahrtnr = parseInt(sample.line_fahrtnr);
     //sample.product_type_id
     //sample.product_name
     sample.station_id = parseInt(sample.station_id);
-    //sample.is_departure
-    if (sample.delay_seconds != null) sample.delay_minutes = Math.round(sample.delay_seconds/60);
-    sample.remarks = JSON.stringify(sample.remarks);
-    sample.cancelled = !!sample.cancelled;
-    //sample.stop_number
-    if (sample.sample_time) sample.sample_time = new Date(sample.sample_time*1000);
-    if (sample.sample_time) sample.ttl_minutes = Math.round(((sample.projected_time || sample.scheduled_time).getTime()-sample.sample_time.getTime())/1000/60);
     //sample.operator_id
+    //sample.is_departure   
+    //sample.remarks
+    //sample.stop_number    
     if (sample.destination_provenance_id) sample.destination_provenance_id = parseInt(sample.destination_provenance_id);
     //sample.scheduled_platform
     //sample.projected_platform
@@ -183,6 +177,7 @@ const processSamples = async (target) => {
             }
 
             let relevantStations = {};
+            let relevantRemarks = {};
             let relevantSamples = [];
             for (let sample of samples) {
                 if (!sample.sample_time) {
@@ -207,15 +202,21 @@ const processSamples = async (target) => {
                     if (Math.abs(sample.ttl_minutes) > 6*30*24*60) ctrs.outside6Months++;
                     continue;
                 }
-
-                if (sample.remarks?.length) ctrs.remarks++;
+                
                 if (sample.cancelled) ctrs.cancelled++;
-                              
-                relevantSamples.push(sample);
+                if (sample.remarks?.length) {
+                    ctrs.remarks++;
+                    const remarks = JSON.stringify(sample.remarks)
+                    const remarks_hash = md5(remarks);
+                    relevantRemarks[remarks_hash] = {remarks_hash: remarks_hash, remarks: remarks};
+                    sample.remarks_hash = remarks_hash;
+                } 
 
                 for (let station of sample.stations) {
                     relevantStations[station.station_id] = formatStation(station);
-                }                
+                }
+                              
+                relevantSamples.push(sample);                
 
                 setIfMissing(foreignFields.operator, sample.operator?.id, sample.operator);
                 setIfMissing(foreignFields.load_factor, sample.load_factor, sample.load_factor);
@@ -230,6 +231,10 @@ const processSamples = async (target) => {
                 const relevantStationList = Object.values(relevantStations);
                 if (relevantStationList.length > 0) {
                     await db.upsertStations(target.schema, relevantStationList);
+                }
+                const relevantRemarksList = Object.values(relevantRemarks);
+                if (relevantRemarksList.length > 0) {
+                    await db.upsertRemarks(target.schema, relevantRemarksList);
                 }
 
                 const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime ? new Date(rtTime*1000) : null));
