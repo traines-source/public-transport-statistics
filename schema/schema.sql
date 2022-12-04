@@ -286,10 +286,11 @@ CREATE TABLE db.response_log (
     response_id integer NOT NULL,
     hash uuid NOT NULL,
     type smallint NOT NULL,
-    response_time timestamp with time zone,
+    response_time timestamp with time zone NOT NULL,
     source smallint NOT NULL,
-    sample_count integer,
-    rt_time timestamp with time zone
+    sample_count integer NOT NULL,
+    response_time_estimated boolean NOT NULL,
+    sample_time_estimated boolean NOT NULL
 );
 
 

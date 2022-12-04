@@ -45,8 +45,9 @@ const formatResponse = (result, hash, source, sampleCount, rtTime) => {
     return {
         hash: hash,
         type: typeIds[result.type],
-        response_time: result.ts,
-        rt_time: rtTime,
+        response_time: result.ts || (rtTime ? new Date((rtTime+fallbackRtDiff)*1000): null),
+        response_time_estimated: !result.ts,
+        sample_time_estimated: !rtTime,
         source: source.sourceid,
         sample_count: sampleCount
     };
@@ -170,7 +171,7 @@ const processSamples = async (target) => {
             const rtTime = result.response?.realtimeDataFrom || result.response?.realtimeDataUpdatedAt;
             if (rtTime) {
                 rtDiffCount++;
-                const diff = result.ts?.getTime()/1000-(rtTime);
+                const diff = result.ts?.getTime()/1000-rtTime;
                 if (diff < rtDiffMin) rtDiffMin = diff;
                 if (diff > rtDiffMax) rtDiffMax = diff;
                 rtDiffSum += diff;
@@ -237,7 +238,7 @@ const processSamples = async (target) => {
                     await db.upsertRemarks(target.schema, relevantRemarksList);
                 }
 
-                const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime ? new Date(rtTime*1000) : null));
+                const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime));
 
                 for (let sample of relevantSamples) {
                     sample.response_id = responseId;

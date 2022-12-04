@@ -64,7 +64,7 @@ const upsertRemarks = async (schema, o) => {
 }
 
 const insertResponse = async (schema, response) => {
-    const fmt = insertFormat(['hash', 'type', 'response_time', 'rt_time', 'source', 'sample_count'], [response]);
+    const fmt = insertFormat(['hash', 'type', 'response_time', 'response_time_estimated', 'sample_time_estimated', 'source', 'sample_count'], [response]);
     const r = await pgc.query('INSERT INTO '+schema+'.response_log ('+fmt.cols+') VALUES '+fmt.format+' RETURNING response_id', fmt.values);
     return r.rows[0].response_id;
 }
