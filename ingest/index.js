@@ -102,8 +102,8 @@ const insertMissing = async (foreignField, insertFct, schema) => {
 }
 
 const processSamples = async (target) => {
-    const responseHashes = {};
-    const sampleHashes = {};
+    let responseHashes = {};
+    let sampleHashes = {};
     let errorOccurred = false;
     const foreignFields = {
         operator: { existing: await db.getOperatorMap(target.schema), missing: {} },
@@ -237,7 +237,6 @@ const processSamples = async (target) => {
             }
 
             ctrs.perf_parse += performance.now()-perf_start;
-            ctrs.perf_ctr++;
             perf_start = performance.now();
             
             try {
@@ -280,7 +279,6 @@ const processSamples = async (target) => {
             }
                 
             ctrs.perf_persist += performance.now()-perf_start;
-            ctrs.perf_ctr++;
             perf_start = performance.now();
             if (ctrs.validResponses % 10000 == 0) {
                 console.log('counters:', ctrs, new Date());
@@ -289,6 +287,8 @@ const processSamples = async (target) => {
                 ctrs.perf_parse = 0;
                 ctrs.perf_persist = 0;
                 ctrs.perf_ctr = 0;
+                responseHashes = {};
+                sampleHashes = {};
             }
         }
 

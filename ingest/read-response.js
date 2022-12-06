@@ -60,7 +60,12 @@ const fileLoader = {
 const updateLastSuccessful = (lastFile, source, target, update) => {
     const checkpointFile = conf.working_dir+'lastSuccessfuls.json';
     const identifier = target+'-'+source.sourceid;
-    let checkpoints = JSON.parse(fs.readFileSync(checkpointFile));
+    let checkpoints = {};
+    try {
+        checkpoints = JSON.parse(fs.readFileSync(checkpointFile));
+    } catch (e) {
+        console.log('Checkpoint file not present.');
+    }
     if (lastFile) {
         checkpoints[identifier] = lastFile;
         if (update) fs.writeFileSync(checkpointFile, JSON.stringify(checkpoints));
