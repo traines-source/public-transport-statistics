@@ -407,21 +407,21 @@ COMMENT ON COLUMN db.sample.id IS 'autoincrement id';
 -- Name: COLUMN sample.scheduled_time; Type: COMMENT; Schema: db; Owner: public-transport-stats
 --
 
-COMMENT ON COLUMN db.sample.scheduled_time IS 'time when arrival/departure was originally scheduled';
+COMMENT ON COLUMN db.sample.scheduled_time IS 'FPTF plannedWhen/plannedDrrival/plannedDeparture, time when arrival/departure was originally scheduled';
 
 
 --
 -- Name: COLUMN sample.projected_time; Type: COMMENT; Schema: db; Owner: public-transport-stats
 --
 
-COMMENT ON COLUMN db.sample.projected_time IS 'time when arrival/departure is currently projected based on delay. Null only when cancelled. When delay_minutes is null (no realtime data), this field is still set (then equal to scheduled_time)';
+COMMENT ON COLUMN db.sample.projected_time IS 'FPTF when/arrival/departure, time when arrival/departure is currently projected based on delay. Null only when cancelled. When delay_minutes is null, this field is still set (then equal to scheduled_time)';
 
 
 --
 -- Name: COLUMN sample.delay_minutes; Type: COMMENT; Schema: db; Owner: public-transport-stats
 --
 
-COMMENT ON COLUMN db.sample.delay_minutes IS 'Null when no realtime data available or when cancelled. Realtime data usually gets deleted by the source system a few minutes after arrival/departure. Negative when too early.';
+COMMENT ON COLUMN db.sample.delay_minutes IS 'Null when no realtime data available or when cancelled. Realtime data usually gets nulled by the source system a few minutes after actual arrival/departure. Negative when too early.';
 
 
 --
@@ -505,7 +505,7 @@ COMMENT ON COLUMN db.sample.is_departure IS 'Indicates arrival/departure.';
 -- Name: COLUMN sample.remarks_hash; Type: COMMENT; Schema: db; Owner: public-transport-stats
 --
 
-COMMENT ON COLUMN db.sample.remarks_hash IS 'FK remarks';
+COMMENT ON COLUMN db.sample.remarks_hash IS 'FK remarks, FPTF remarks.';
 
 
 --
@@ -547,7 +547,7 @@ COMMENT ON COLUMN db.sample.load_factor_id IS 'FK load_factor';
 -- Name: COLUMN sample.response_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
 --
 
-COMMENT ON COLUMN db.sample.response_id IS 'FK response_log';
+COMMENT ON COLUMN db.sample.response_id IS 'FK response_log, FPTF loadFactor';
 
 
 --

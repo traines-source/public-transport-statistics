@@ -18,8 +18,8 @@ Collecting traffic of realtime public transport APIs to calculate statistics abo
 The table where all samples are recorded. Many fields are based on [FPTF (Friendly Public Transport Format)](https://github.com/public-transport/friendly-public-transport-format), which is also the intermediate format for ingestion.
 
 * id: autoincrement id
-* scheduled_time: time when arrival/departure was originally scheduled
-* projected_time: time when arrival/departure is currently projected based on delay. Null only when cancelled. When delay_minutes is s field is still set (then equal to scheduled_time)
+* scheduled_time: FPTF plannedWhen/plannedDrrival/plannedDeparture, time when arrival/departure was originally scheduled
+* projected_time: FPTF when/arrival/departure, time when arrival/departure is currently projected based on delay. Null only when cancelled. When delay_minutes is null, this field is still set (then equal to scheduled_time)
 * delay_minutes: Null when no realtime data available or when cancelled. Realtime data usually gets nulled by the source system a few minutes after actual arrival/departure. Negative when too early.
 * cancelled: Either this stop or the entire trip was cancelled.
 * sample_time: When this sample was taken, i.e. when the data contained in this row was current.
@@ -37,7 +37,7 @@ The table where all samples are recorded. Many fields are based on [FPTF (Friend
 * destination_provenance_id: Destination if is_departure, provenance if NOT is_departure.
 * scheduled_platform: FPTF plannedPlatform
 * projected_platform: FPTF platform
-* load_factor_id: FK load_factor
+* load_factor_id: FK response_log, FPTF loadFactor
 * response_id: FK response_log
 
 ### sample_histogram
@@ -63,7 +63,7 @@ Revisiting the question from above: Given a train is currently delayed by `prior
 
 * if the delay is sampled too early before actual departure/arrival, delays might be underestimated (I think, because delays tend to increase more than decrease during the course of a trip)
 * if the delay is sampled much before actual departure/arrival, when for most trips, live data is not yet available, cancelled trips are overrepresented (since they are usually known earlier and only trips with live data or cancelled flag set are kept as "latest sample")
-* if the delay is sampled too far after the actual departure, cancelled trips are overrepresented, since for some providers (e.g. Deutsche Bahn), delays get nulled after a couple of minutes and as such these samples don't qualify as "latest sample", but the cancelled ones do indefinitely.
+* if the delay is sampled too far after the actual departure/arrival, cancelled trips are overrepresented, since for some providers (e.g. Deutsche Bahn), delays get nulled after a couple of minutes and as such these samples don't qualify as "latest sample", but the cancelled ones do indefinitely.
 
 For more insight on `latest_sample_ttl_bucket`, check out the "Realtime data deletion" panel in the ["Ops" dashboard](https://stats.traines.eu/d/bnoIAJFVz/ops?orgId=1). 
 
@@ -188,7 +188,7 @@ JOIN db.official_delay_stats od ON od.category = oo.category AND od.year = s.yea
 GROUP BY s.year, s.month, od.category, od.delay_percentage_5min, od.delay_percentage_15min
 
 ```
-If you find more efficient or simpler variants of these queries (that are still correct), let me know!
+If you find more efficient or simpler variants of these queries (that are still (or more?) correct), let me know!
 
 ## Credits
 

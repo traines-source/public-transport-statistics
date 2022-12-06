@@ -1,0 +1,35 @@
+{
+    "host": "postgres",
+    "port": 5432,
+    "user": "",
+    "password": "",
+    "working_dir": "/working/",
+    "targets": [
+        {
+            "schema": "db",
+            "sources": [
+                {
+                    "sourceid": 0,
+                    "matches": "/source/**/*.db.*.ndjson.bz2",
+                    "compression": "bz2-bulks",
+                    "type": "hafas",
+                    "disabled": false
+                },
+                {
+                    "sourceid": 1,
+                    "matches": "/source/*.ndjson.gz",
+                    "compression": "gzip-bulks",
+                    "type": "hafas",
+                    "disabled": false
+                },
+                {
+                    "sourceid": 2,
+                    "matches": "/source/*.ndgz",
+                    "compression": "gzip-single",
+                    "type": "fptf",
+                    "disabled": true
+                }
+            ]
+        }
+    ]
+}
