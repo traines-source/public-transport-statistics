@@ -53,6 +53,9 @@ const unmarshalHafasResponse = (line) => {
             return res;
         }
     }
+    if (data.svcResL) {
+        return data;
+    }
     return null;
 }
 
