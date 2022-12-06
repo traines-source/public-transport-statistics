@@ -397,6 +397,160 @@ CREATE TABLE db.sample (
 ALTER TABLE db.sample OWNER TO "public-transport-stats";
 
 --
+-- Name: COLUMN sample.id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.id IS 'autoincrement id';
+
+
+--
+-- Name: COLUMN sample.scheduled_time; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.scheduled_time IS 'time when arrival/departure was originally scheduled';
+
+
+--
+-- Name: COLUMN sample.projected_time; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.projected_time IS 'time when arrival/departure is currently projected based on delay. Null only when cancelled. When delay_minutes is null (no realtime data), this field is still set (then equal to scheduled_time)';
+
+
+--
+-- Name: COLUMN sample.delay_minutes; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.delay_minutes IS 'Null when no realtime data available or when cancelled. Realtime data usually gets deleted by the source system a few minutes after arrival/departure. Negative when too early.';
+
+
+--
+-- Name: COLUMN sample.cancelled; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.cancelled IS 'Either this stop or the entire trip was cancelled.';
+
+
+--
+-- Name: COLUMN sample.sample_time; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.sample_time IS 'When this sample was taken, i.e. when the data contained in this row was current.';
+
+
+--
+-- Name: COLUMN sample.ttl_minutes; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.ttl_minutes IS 'Difference between sample_time and projected_time. Positive when arrival/departure was in the future at sample time. Negative when it was in the past.';
+
+
+--
+-- Name: COLUMN sample.trip_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.trip_id IS 'FPTF tripId';
+
+
+--
+-- Name: COLUMN sample.line_name; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.line_name IS 'FPTF line.name';
+
+
+--
+-- Name: COLUMN sample.line_fahrtnr; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.line_fahrtnr IS 'FPTF line.fahrtNr';
+
+
+--
+-- Name: COLUMN sample.product_type_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.product_type_id IS 'FPTF line.product';
+
+
+--
+-- Name: COLUMN sample.product_name; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.product_name IS 'FPTF line.productName';
+
+
+--
+-- Name: COLUMN sample.station_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.station_id IS 'EVA number';
+
+
+--
+-- Name: COLUMN sample.operator_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.operator_id IS 'FK operator';
+
+
+--
+-- Name: COLUMN sample.is_departure; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.is_departure IS 'Indicates arrival/departure.';
+
+
+--
+-- Name: COLUMN sample.remarks_hash; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.remarks_hash IS 'FK remarks';
+
+
+--
+-- Name: COLUMN sample.stop_number; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.stop_number IS 'Can be used to indicate how many stops came before this stop on this trip.';
+
+
+--
+-- Name: COLUMN sample.destination_provenance_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.destination_provenance_id IS 'Destination if is_departure, provenance if NOT is_departure.';
+
+
+--
+-- Name: COLUMN sample.scheduled_platform; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.scheduled_platform IS 'FPTF plannedPlatform';
+
+
+--
+-- Name: COLUMN sample.projected_platform; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.projected_platform IS 'FPTF platform';
+
+
+--
+-- Name: COLUMN sample.load_factor_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.load_factor_id IS 'FK load_factor';
+
+
+--
+-- Name: COLUMN sample.response_id; Type: COMMENT; Schema: db; Owner: public-transport-stats
+--
+
+COMMENT ON COLUMN db.sample.response_id IS 'FK response_log';
+
+
+--
 -- Name: sample_histogram; Type: MATERIALIZED VIEW; Schema: db; Owner: public-transport-stats
 --
 
