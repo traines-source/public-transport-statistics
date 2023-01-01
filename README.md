@@ -18,12 +18,12 @@ Collecting traffic of realtime public transport APIs to calculate statistics abo
 The table where all samples are recorded. Many fields are based on [FPTF (Friendly Public Transport Format)](https://github.com/public-transport/friendly-public-transport-format), which is also the intermediate format for ingestion.
 
 * id: autoincrement id
-* scheduled_time: FPTF plannedWhen/plannedDrrival/plannedDeparture, time when arrival/departure was originally scheduled
+* scheduled_time: FPTF plannedWhen/plannedArrival/plannedDeparture, time when arrival/departure was originally scheduled
 * projected_time: FPTF when/arrival/departure, time when arrival/departure is currently projected based on delay. Null only when cancelled. When delay_minutes is null, this field is still set (then equal to scheduled_time)
 * delay_minutes: Null when no realtime data available or when cancelled. Realtime data usually gets nulled by the source system a few minutes after actual arrival/departure. Negative when too early.
 * cancelled: Either this stop or the entire trip was cancelled.
 * sample_time: When this sample was taken, i.e. when the data contained in this row was current.
-* ttl_minutes: Difference between sample_time and projected_time. Positive when arrival/departure was in the future at sample time. past.
+* ttl_minutes: Difference between sample_time and projected_time. Positive when arrival/departure was in the future at sample time. Negative when it was in the past past.
 * trip_id: FPTF tripId
 * line_name: FPTF line.name
 * line_fahrtnr: FPTF line.fahrtNr
@@ -37,7 +37,7 @@ The table where all samples are recorded. Many fields are based on [FPTF (Friend
 * destination_provenance_id: Destination if is_departure, provenance if NOT is_departure.
 * scheduled_platform: FPTF plannedPlatform
 * projected_platform: FPTF platform
-* load_factor_id: FK response_log, FPTF loadFactor
+* load_factor_id: FK load_factor, FPTF loadFactor
 * response_id: FK response_log
 
 ### sample_histogram
@@ -69,6 +69,44 @@ For more insight on `latest_sample_ttl_bucket`, check out the "Realtime data del
 
 ## Core queries
 
+### Filtering latest_samples
+
+```
+SELECT DISTINCT ON(trip_id, scheduled_time, station_id, is_departure)
+trip_id, scheduled_time, station_id, is_departure,
+ttl_minutes, id, sample_time,
+CASE
+	WHEN cancelled THEN NULL
+	ELSE delay_minutes
+END AS delay_minutes,
+CASE
+	WHEN cancelled AND substitute_running.remarks_hash IS NOT NULL THEN true
+	WHEN cancelled THEN false
+	ELSE NULL
+END AS cancelled_with_substitute
+FROM db.sample s
+LEFT JOIN (
+	SELECT DISTINCT remarks_hash
+	FROM (
+		SELECT remarks_hash, jsonb_array_elements(remarks) AS r
+		FROM db.remarks r
+	) AS d
+	WHERE
+	r->>'code' = 'alternative-trip'
+	OR r->>'text' LIKE '%CE 29%' 
+	OR r->>'text' LIKE '%C 29%'
+	OR r->>'text' LIKE '%Ersatzfahrt%'
+	OR r->>'text' LIKE '%substitute%'
+) AS substitute_running
+ON substitute_running.remarks_hash = s.remarks_hash
+WHERE delay_minutes IS NOT NULL OR cancelled
+ORDER BY trip_id, scheduled_time, station_id, is_departure, sample_time DESC, ttl_minutes ASC 
+```
+
+Since we do not actually know the final delay of a trip at a station, we record the latest samples for each trip-station-scheduled_time-is_departure combination and take that as ground truth. We can later restrict our statistics to latest samples that were taken not too far from final departure/arrival (cf. `latest_sample_ttl_bucket`).
+
+For cancelled trips, we detect based on the recorded remarks whether a substitute trip is running and as such, from a traveler's perspective, whether the trip is not actually cancelled.
+
 ### First aggregation to VIEW sample_histogram
 
 ```
@@ -88,9 +126,9 @@ SELECT r.scheduled_time,
     r.latest_sample_delay_bucket,
     r.sample_count,
 	SUM(sample_count) OVER (PARTITION BY 
-	scheduled_time, product_type_id, station_id, is_departure,
-	prior_delay_bucket, prior_ttl_bucket, latest_sample_ttl_bucket
-) AS total_sample_count
+		scheduled_time, product_type_id, station_id, is_departure,
+		prior_delay_bucket, prior_ttl_bucket, latest_sample_ttl_bucket
+	) AS total_sample_count
 FROM (
 	SELECT date_trunc('hour'::text, s.scheduled_time) AS scheduled_time, product_type_id, s.station_id, s.operator_id, s.is_departure,
 	CASE
@@ -103,31 +141,18 @@ FROM (
 	END AS prior_delay_bucket, -- NULL without prior delay or for trains not yet having live data
 	db.ttl_bucket_range(latest_sample.ttl_minutes) AS latest_sample_ttl_bucket, -- hopefully never NULL (INNER JOIN)
 	CASE
+		WHEN latest_sample.cancelled_with_substitute = true THEN '(,)'::int4range
 		WHEN latest_sample.id = s.id OR s.delay_minutes IS NULL THEN db.delay_bucket_range(latest_sample.delay_minutes)
 		ELSE db.delay_bucket_range(latest_sample.delay_minutes-s.delay_minutes) 
-	END AS latest_sample_delay_bucket, -- relative delay with prior delay, else absolute delay. NULL only when stop cancelled.
+	END AS latest_sample_delay_bucket, -- relative delay with prior delay, else absolute delay. NULL when stop cancelled. '(,)' when stop cancelled but substitution trip running.
 	COUNT(*) as sample_count
 	FROM db.sample AS s
-	INNER JOIN (
-		SELECT sample_time, trip_id, scheduled_time, station_id, is_departure,
-		MIN(ttl_minutes) AS ttl_minutes, BOOL_OR(cancelled) AS cancelled, MAX(id) as id,
-		CASE
-			WHEN BOOL_OR(cancelled) THEN NULL
-			ELSE MAX(delay_minutes)
-		END AS delay_minutes
-		FROM db.sample
-		NATURAL JOIN (
-			SELECT MAX(sample_time) AS sample_time, trip_id, scheduled_time, station_id, is_departure
-			FROM db.sample
-			WHERE delay_minutes IS NOT NULL OR cancelled
-			GROUP BY trip_id, scheduled_time, station_id, is_departure
-		) AS latest_live_sample
-		GROUP BY sample_time, trip_id, scheduled_time, station_id, is_departure
-	) AS latest_sample
+	INNER JOIN db.latest_sample
 	ON s.trip_id = latest_sample.trip_id
 	AND s.scheduled_time = latest_sample.scheduled_time
 	AND s.station_id = latest_sample.station_id
 	AND s.is_departure = latest_sample.is_departure
+	WHERE NOT s.cancelled OR latest_sample.id = s.id
 	GROUP BY date_trunc('hour', s.scheduled_time), product_type_id, s.station_id, s.operator_id, s.is_departure,
 	prior_delay_bucket, prior_ttl_bucket, latest_sample_delay_bucket, latest_sample_ttl_bucket
 ) AS r
@@ -145,7 +170,6 @@ WHERE prior_ttl_bucket = '$prior_ttl_bucket'::int4range AND (CASE WHEN '$prior_d
 GROUP BY latest_sample_delay_bucket
 ) AS s
 FULL OUTER JOIN (SELECT DISTINCT latest_sample_delay_bucket FROM ${schema}.sample_histogram WHERE latest_sample_delay_bucket IS NOT NULL) AS l ON l.latest_sample_delay_bucket = s.latest_sample_delay_bucket
---WHERE l.latest_sample_delay_bucket <@ '(-5,)'::int4range OR l.latest_sample_delay_bucket IS NULL
 ORDER BY l.latest_sample_delay_bucket
 ```
 
@@ -161,7 +185,7 @@ WHERE prior_ttl_bucket IS NULL AND NOT is_departure AND latest_sample_ttl_bucket
 GROUP BY latest_sample_delay_bucket
 ) AS s
 FULL OUTER JOIN (SELECT DISTINCT latest_sample_delay_bucket FROM ${schema}.sample_histogram WHERE latest_sample_delay_bucket IS NOT NULL) AS l ON l.latest_sample_delay_bucket = s.latest_sample_delay_bucket
-WHERE l.latest_sample_delay_bucket <@ '(-5,)'::int4range OR l.latest_sample_delay_bucket IS NULL
+WHERE NOT l.latest_sample_delay_bucket <@ '(,-5)'::int4range OR l.latest_sample_delay_bucket IS NULL
 ORDER BY l.latest_sample_delay_bucket
 ```
 
@@ -179,7 +203,7 @@ FROM (
 	FROM db.sample_histogram
 	NATURAL JOIN db.product_type
 	WHERE prior_ttl_bucket IS NULL AND NOT is_departure AND latest_sample_ttl_bucket <@ '$latest_sample_ttl_bucket'::int4range
-	AND latest_sample_delay_bucket IS NOT NULL
+	AND latest_sample_delay_bucket IS NOT NULL AND latest_sample_delay_bucket::text != '(,)'
 	GROUP BY year, month, operator_id, latest_sample_delay_bucket
 ) AS s
 NATURAL JOIN db.operator o
@@ -192,4 +216,6 @@ If you find more efficient or simpler variants of these queries (that are still 
 
 ## Credits
 
-Thanks to @derhuerst for his data support (and of course his work on [hafas-client](https://github.com/public-transport/hafas-client/) and [FPTF](https://github.com/public-transport/friendly-public-transport-format) and...).
+Thanks to [@derhuerst](https://github.com/derhuerst) for his data support (and of course his work on [hafas-client](https://github.com/public-transport/hafas-client/) and [FPTF](https://github.com/public-transport/friendly-public-transport-format) and...).
+
+Also see https://github.com/dystonse/dystonse.

@@ -26,44 +26,6 @@ CREATE SCHEMA db;
 ALTER SCHEMA db OWNER TO "public-transport-stats";
 
 --
--- Name: delay_bucket(smallint); Type: FUNCTION; Schema: db; Owner: public-transport-stats
---
-
-CREATE FUNCTION db.delay_bucket(val smallint) RETURNS smallint
-    LANGUAGE sql
-    AS $$SELECT
-CAST(
-	CASE 	
-	WHEN val <= -90 THEN -90
-	WHEN val <= -75 THEN -75
-	WHEN val <= -60 THEN -60
-	WHEN val <= -45 THEN -45
-	WHEN val <= -30 THEN -30
-	WHEN val <= -25 THEN -25
-	WHEN val <= -20 THEN -20
-	WHEN val <= -15 THEN -15
-	WHEN val <= -10 THEN -10
-	WHEN val <= -5 THEN -5
-	WHEN val <= 0 THEN 0
-	WHEN val <= 5 THEN 5
-	WHEN val <= 10 THEN 10
-	WHEN val <= 15 THEN 15
-	WHEN val <= 20 THEN 20
-	WHEN val <= 25 THEN 25
-	WHEN val <= 30 THEN 30
-	WHEN val <= 45 THEN 45
-	WHEN val <= 60 THEN 60
-	WHEN val <= 75 THEN 75
-	WHEN val <= 90 THEN 90
-	WHEN val > 90 THEN 32767
-	ELSE NULL END
-	AS smallint
-) AS delay_le$$;
-
-
-ALTER FUNCTION db.delay_bucket(val smallint) OWNER TO "public-transport-stats";
-
---
 -- Name: delay_bucket_range(smallint); Type: FUNCTION; Schema: db; Owner: public-transport-stats
 --
 
@@ -72,28 +34,44 @@ CREATE FUNCTION db.delay_bucket_range(val smallint) RETURNS int4range
     AS $$SELECT
 CAST(
 	CASE 	
-	WHEN val <= -90 THEN '(,-90]'
-	WHEN val <= -75 THEN '(-90,-75]'
-	WHEN val <= -60 THEN '(-75,-60]'
-	WHEN val <= -45 THEN '(-60,-45]'
-	WHEN val <= -30 THEN '(-45,-30]'
-	WHEN val <= -25 THEN '(-30,-25]'
-	WHEN val <= -20 THEN '(-25,-20]'
-	WHEN val <= -15 THEN '(-20,-15]'
-	WHEN val <= -10 THEN '(-15,-10]'
-	WHEN val <= -5 THEN '(-10,-5]'
-	WHEN val <= 0 THEN '(-5,0]'
-	WHEN val <= 5 THEN '(0,5]'
-	WHEN val <= 10 THEN '(5,10]'
-	WHEN val <= 15 THEN '(10,15]'
-	WHEN val <= 20 THEN '(15,20]'
-	WHEN val <= 25 THEN '(20,25]'
-	WHEN val <= 30 THEN '(25,30]'
-	WHEN val <= 45 THEN '(30,45]'
-	WHEN val <= 60 THEN '(45,60]'
-	WHEN val <= 75 THEN '(60,75]'
-	WHEN val <= 90 THEN '(75,90]'
-	WHEN val > 90 THEN '(90,)'
+	WHEN val < -90 THEN '(,-90)'
+	WHEN val < -75 THEN '[-90,-75)'
+	WHEN val < -60 THEN '[-75,-60)'
+	WHEN val < -45 THEN '[-60,-45)'
+	WHEN val < -30 THEN '[-45,-30)'
+	WHEN val < -25 THEN '[-30,-25)'
+	WHEN val < -20 THEN '[-25,-20)'
+	WHEN val < -15 THEN '[-20,-15)'
+	WHEN val < -10 THEN '[-15,-10)'
+	WHEN val < -9 THEN '[-10,-9)'
+	WHEN val < -8 THEN '[-9,-8)'
+	WHEN val < -7 THEN '[-8,-7)'
+	WHEN val < -6 THEN '[-7,-6)'
+	WHEN val < -5 THEN '[-6,-5)'
+	WHEN val < -4 THEN '[-5,-4)'
+	WHEN val < -3 THEN '[-4,-3)'
+	WHEN val < -2 THEN '[-3,-2)'
+	WHEN val < -1 THEN '[-2,-1)'
+	WHEN val < 0 THEN '[-1,0)'
+	WHEN val < 1 THEN '[0,1)'
+	WHEN val < 2 THEN '[1,2)'
+	WHEN val < 3 THEN '[2,3)'
+	WHEN val < 4 THEN '[3,4)'
+	WHEN val < 5 THEN '[4,5)'
+	WHEN val < 6 THEN '[5,6)'
+	WHEN val < 7 THEN '[6,7)'
+	WHEN val < 8 THEN '[7,8)'
+	WHEN val < 9 THEN '[8,9)'
+	WHEN val < 10 THEN '[9,10)'
+	WHEN val < 15 THEN '[10,15)'
+	WHEN val < 20 THEN '[15,20)'
+	WHEN val < 25 THEN '[20,25)'
+	WHEN val < 30 THEN '[25,30)'
+	WHEN val < 45 THEN '[30,45)'
+	WHEN val < 60 THEN '[45,60)'
+	WHEN val < 75 THEN '[60,75)'
+	WHEN val < 90 THEN '[75,90)'
+	WHEN val > 90 THEN '[90,)'
 	ELSE NULL END
 	AS int4range
 ) AS delay_bucket$$;
@@ -121,35 +99,6 @@ WHERE value::text = val::text$$;
 ALTER FUNCTION db.response_type_name(val smallint) OWNER TO "public-transport-stats";
 
 --
--- Name: ttl_bucket(smallint); Type: FUNCTION; Schema: db; Owner: public-transport-stats
---
-
-CREATE FUNCTION db.ttl_bucket(val smallint) RETURNS smallint
-    LANGUAGE sql
-    AS $$SELECT
-CAST(
-	CASE
-	WHEN val <= -5 THEN -5
-	WHEN val <= 0 THEN 0
-	WHEN val <= 5 THEN 5
-	WHEN val <= 10 THEN 10
-	WHEN val <= 15 THEN 15
-	WHEN val <= 20 THEN 20
-	WHEN val <= 25 THEN 25
-	WHEN val <= 30 THEN 30
-	WHEN val <= 45 THEN 45
-	WHEN val <= 60 THEN 60
-	WHEN val <= 75 THEN 75
-	WHEN val <= 90 THEN 90
-	WHEN val > 90 THEN 32767
-	ELSE NULL END
-	AS smallint
-) AS ttl_le$$;
-
-
-ALTER FUNCTION db.ttl_bucket(val smallint) OWNER TO "public-transport-stats";
-
---
 -- Name: ttl_bucket_range(smallint); Type: FUNCTION; Schema: db; Owner: public-transport-stats
 --
 
@@ -158,19 +107,21 @@ CREATE FUNCTION db.ttl_bucket_range(val smallint) RETURNS int4range
     AS $$SELECT
 CAST(
 	CASE
-	WHEN val <= -5 THEN '(,-5]'
-	WHEN val <= 0 THEN '(-5,0]'
-	WHEN val <= 5 THEN '(0,5]'
-	WHEN val <= 10 THEN '(5,10]'
-	WHEN val <= 15 THEN '(10,15]'
-	WHEN val <= 20 THEN '(15,20]'
-	WHEN val <= 25 THEN '(20,25]'
-	WHEN val <= 30 THEN '(25,30]'
-	WHEN val <= 45 THEN '(30,45]'
-	WHEN val <= 60 THEN '(45,60]'
-	WHEN val <= 75 THEN '(60,75]'
-	WHEN val <= 90 THEN '(75,90]'
-	WHEN val > 90 THEN '(90,)'
+	WHEN val < -15 THEN '(,-15)'
+	WHEN val < -10 THEN '[-15,-10)'
+	WHEN val < -5 THEN '[-10,-5)'
+	WHEN val < 0 THEN '[-5,0)'
+	WHEN val < 5 THEN '[0,5)'
+	WHEN val < 10 THEN '[5,10)'
+	WHEN val < 15 THEN '[10,15)'
+	WHEN val < 20 THEN '[15,20)'
+	WHEN val < 25 THEN '[20,25)'
+	WHEN val < 30 THEN '[25,30)'
+	WHEN val < 45 THEN '[30,45)'
+	WHEN val < 60 THEN '[45,60)'
+	WHEN val < 75 THEN '[60,75)'
+	WHEN val < 90 THEN '[75,90)'
+	WHEN val > 90 THEN '[90,)'
 	ELSE NULL END
 	AS int4range
 ) AS ttl_bucket$$;
@@ -183,136 +134,6 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: load_factor; Type: TABLE; Schema: db; Owner: public-transport-stats
---
-
-CREATE TABLE db.load_factor (
-    load_factor_id smallint NOT NULL,
-    name text NOT NULL
-);
-
-
-ALTER TABLE db.load_factor OWNER TO "public-transport-stats";
-
---
--- Name: load_factor_load_factor_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
---
-
-CREATE SEQUENCE db.load_factor_load_factor_id_seq
-    AS smallint
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE db.load_factor_load_factor_id_seq OWNER TO "public-transport-stats";
-
---
--- Name: load_factor_load_factor_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
---
-
-ALTER SEQUENCE db.load_factor_load_factor_id_seq OWNED BY db.load_factor.load_factor_id;
-
-
---
--- Name: official_delay_stats; Type: TABLE; Schema: db; Owner: public-transport-stats
---
-
-CREATE TABLE db.official_delay_stats (
-    year smallint NOT NULL,
-    month smallint NOT NULL,
-    delay_percentage_5min real NOT NULL,
-    delay_percentage_15min real NOT NULL,
-    category text NOT NULL
-);
-
-
-ALTER TABLE db.official_delay_stats OWNER TO "public-transport-stats";
-
---
--- Name: official_delay_stats_operators; Type: TABLE; Schema: db; Owner: public-transport-stats
---
-
-CREATE TABLE db.official_delay_stats_operators (
-    category text NOT NULL,
-    operator text NOT NULL
-);
-
-
-ALTER TABLE db.official_delay_stats_operators OWNER TO "public-transport-stats";
-
---
--- Name: operator; Type: TABLE; Schema: db; Owner: public-transport-stats
---
-
-CREATE TABLE db.operator (
-    operator_id smallint NOT NULL,
-    id text NOT NULL,
-    name text
-);
-
-
-ALTER TABLE db.operator OWNER TO "public-transport-stats";
-
---
--- Name: operator_operator_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
---
-
-CREATE SEQUENCE db.operator_operator_id_seq
-    AS smallint
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE db.operator_operator_id_seq OWNER TO "public-transport-stats";
-
---
--- Name: operator_operator_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
---
-
-ALTER SEQUENCE db.operator_operator_id_seq OWNED BY db.operator.operator_id;
-
-
---
--- Name: product_type; Type: TABLE; Schema: db; Owner: public-transport-stats
---
-
-CREATE TABLE db.product_type (
-    product_type_id smallint NOT NULL,
-    name text NOT NULL
-);
-
-
-ALTER TABLE db.product_type OWNER TO "public-transport-stats";
-
---
--- Name: product_type_product_type_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
---
-
-CREATE SEQUENCE db.product_type_product_type_id_seq
-    AS smallint
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE db.product_type_product_type_id_seq OWNER TO "public-transport-stats";
-
---
--- Name: product_type_product_type_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
---
-
-ALTER SEQUENCE db.product_type_product_type_id_seq OWNED BY db.product_type.product_type_id;
-
-
---
 -- Name: remarks; Type: TABLE; Schema: db; Owner: public-transport-stats
 --
 
@@ -323,46 +144,6 @@ CREATE TABLE db.remarks (
 
 
 ALTER TABLE db.remarks OWNER TO "public-transport-stats";
-
---
--- Name: response_log; Type: TABLE; Schema: db; Owner: public-transport-stats
---
-
-CREATE TABLE db.response_log (
-    response_id integer NOT NULL,
-    hash uuid NOT NULL,
-    type smallint NOT NULL,
-    response_time timestamp with time zone NOT NULL,
-    source smallint NOT NULL,
-    sample_count integer NOT NULL,
-    response_time_estimated boolean NOT NULL,
-    sample_time_estimated boolean NOT NULL
-);
-
-
-ALTER TABLE db.response_log OWNER TO "public-transport-stats";
-
---
--- Name: response_log_response_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
---
-
-CREATE SEQUENCE db.response_log_response_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE db.response_log_response_id_seq OWNER TO "public-transport-stats";
-
---
--- Name: response_log_response_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
---
-
-ALTER SEQUENCE db.response_log_response_id_seq OWNED BY db.response_log.response_id;
-
 
 --
 -- Name: sample; Type: TABLE; Schema: db; Owner: public-transport-stats
@@ -551,6 +332,210 @@ COMMENT ON COLUMN db.sample.response_id IS 'FK response_log, FPTF loadFactor';
 
 
 --
+-- Name: latest_sample; Type: MATERIALIZED VIEW; Schema: db; Owner: public-transport-stats
+--
+
+CREATE MATERIALIZED VIEW db.latest_sample AS
+ SELECT DISTINCT ON (s.trip_id, s.scheduled_time, s.station_id, s.is_departure) s.trip_id,
+    s.scheduled_time,
+    s.station_id,
+    s.is_departure,
+    s.ttl_minutes,
+    s.id,
+    s.sample_time,
+        CASE
+            WHEN s.cancelled THEN NULL::smallint
+            ELSE s.delay_minutes
+        END AS delay_minutes,
+        CASE
+            WHEN (s.cancelled AND (substitute_running.remarks_hash IS NOT NULL)) THEN true
+            WHEN s.cancelled THEN false
+            ELSE NULL::boolean
+        END AS cancelled_with_substitute
+   FROM (db.sample s
+     LEFT JOIN ( SELECT DISTINCT d.remarks_hash
+           FROM ( SELECT r.remarks_hash,
+                    jsonb_array_elements(r.remarks) AS r
+                   FROM db.remarks r) d
+          WHERE (((d.r ->> 'code'::text) = 'alternative-trip'::text) OR ((d.r ->> 'text'::text) ~~ '%CE 29%'::text) OR ((d.r ->> 'text'::text) ~~ '%C 29%'::text) OR ((d.r ->> 'text'::text) ~~ '%Ersatzfahrt%'::text) OR ((d.r ->> 'text'::text) ~~ '%substitute%'::text))) substitute_running ON ((substitute_running.remarks_hash = s.remarks_hash)))
+  WHERE ((s.delay_minutes IS NOT NULL) OR s.cancelled)
+  ORDER BY s.trip_id, s.scheduled_time, s.station_id, s.is_departure, s.sample_time DESC, s.ttl_minutes
+  WITH NO DATA;
+
+
+ALTER TABLE db.latest_sample OWNER TO "public-transport-stats";
+
+--
+-- Name: load_factor; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.load_factor (
+    load_factor_id smallint NOT NULL,
+    name text NOT NULL
+);
+
+
+ALTER TABLE db.load_factor OWNER TO "public-transport-stats";
+
+--
+-- Name: load_factor_load_factor_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE SEQUENCE db.load_factor_load_factor_id_seq
+    AS smallint
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE db.load_factor_load_factor_id_seq OWNER TO "public-transport-stats";
+
+--
+-- Name: load_factor_load_factor_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
+--
+
+ALTER SEQUENCE db.load_factor_load_factor_id_seq OWNED BY db.load_factor.load_factor_id;
+
+
+--
+-- Name: official_delay_stats; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.official_delay_stats (
+    year smallint NOT NULL,
+    month smallint NOT NULL,
+    delay_percentage_5min real NOT NULL,
+    delay_percentage_15min real NOT NULL,
+    category text NOT NULL
+);
+
+
+ALTER TABLE db.official_delay_stats OWNER TO "public-transport-stats";
+
+--
+-- Name: official_delay_stats_operators; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.official_delay_stats_operators (
+    category text NOT NULL,
+    operator text NOT NULL
+);
+
+
+ALTER TABLE db.official_delay_stats_operators OWNER TO "public-transport-stats";
+
+--
+-- Name: operator; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.operator (
+    operator_id smallint NOT NULL,
+    id text NOT NULL,
+    name text
+);
+
+
+ALTER TABLE db.operator OWNER TO "public-transport-stats";
+
+--
+-- Name: operator_operator_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE SEQUENCE db.operator_operator_id_seq
+    AS smallint
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE db.operator_operator_id_seq OWNER TO "public-transport-stats";
+
+--
+-- Name: operator_operator_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
+--
+
+ALTER SEQUENCE db.operator_operator_id_seq OWNED BY db.operator.operator_id;
+
+
+--
+-- Name: product_type; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.product_type (
+    product_type_id smallint NOT NULL,
+    name text NOT NULL
+);
+
+
+ALTER TABLE db.product_type OWNER TO "public-transport-stats";
+
+--
+-- Name: product_type_product_type_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE SEQUENCE db.product_type_product_type_id_seq
+    AS smallint
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE db.product_type_product_type_id_seq OWNER TO "public-transport-stats";
+
+--
+-- Name: product_type_product_type_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
+--
+
+ALTER SEQUENCE db.product_type_product_type_id_seq OWNED BY db.product_type.product_type_id;
+
+
+--
+-- Name: response_log; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.response_log (
+    response_id integer NOT NULL,
+    hash uuid NOT NULL,
+    type smallint NOT NULL,
+    response_time timestamp with time zone NOT NULL,
+    source smallint NOT NULL,
+    sample_count integer NOT NULL,
+    response_time_estimated boolean NOT NULL,
+    sample_time_estimated boolean NOT NULL
+);
+
+
+ALTER TABLE db.response_log OWNER TO "public-transport-stats";
+
+--
+-- Name: response_log_response_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE SEQUENCE db.response_log_response_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE db.response_log_response_id_seq OWNER TO "public-transport-stats";
+
+--
+-- Name: response_log_response_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
+--
+
+ALTER SEQUENCE db.response_log_response_id_seq OWNED BY db.response_log.response_id;
+
+
+--
 -- Name: sample_histogram; Type: MATERIALIZED VIEW; Schema: db; Owner: public-transport-stats
 --
 
@@ -586,33 +571,14 @@ CREATE MATERIALIZED VIEW db.sample_histogram AS
                 END AS prior_delay_bucket,
             db.ttl_bucket_range(latest_sample.ttl_minutes) AS latest_sample_ttl_bucket,
                 CASE
+                    WHEN (latest_sample.cancelled_with_substitute = true) THEN '(,)'::int4range
                     WHEN ((latest_sample.id = s.id) OR (s.delay_minutes IS NULL)) THEN db.delay_bucket_range(latest_sample.delay_minutes)
                     ELSE db.delay_bucket_range((latest_sample.delay_minutes - s.delay_minutes))
                 END AS latest_sample_delay_bucket,
             count(*) AS sample_count
            FROM (db.sample s
-             JOIN ( SELECT sample.sample_time,
-                    sample.trip_id,
-                    sample.scheduled_time,
-                    sample.station_id,
-                    sample.is_departure,
-                    min(sample.ttl_minutes) AS ttl_minutes,
-                    bool_or(sample.cancelled) AS cancelled,
-                    max(sample.id) AS id,
-                        CASE
-                            WHEN bool_or(sample.cancelled) THEN NULL::smallint
-                            ELSE max(sample.delay_minutes)
-                        END AS delay_minutes
-                   FROM (db.sample
-                     JOIN ( SELECT max(sample_1.sample_time) AS sample_time,
-                            sample_1.trip_id,
-                            sample_1.scheduled_time,
-                            sample_1.station_id,
-                            sample_1.is_departure
-                           FROM db.sample sample_1
-                          WHERE ((sample_1.delay_minutes IS NOT NULL) OR sample_1.cancelled)
-                          GROUP BY sample_1.trip_id, sample_1.scheduled_time, sample_1.station_id, sample_1.is_departure) latest_live_sample USING (scheduled_time, sample_time, trip_id, station_id, is_departure))
-                  GROUP BY sample.sample_time, sample.trip_id, sample.scheduled_time, sample.station_id, sample.is_departure) latest_sample ON (((s.trip_id = latest_sample.trip_id) AND (s.scheduled_time = latest_sample.scheduled_time) AND (s.station_id = latest_sample.station_id) AND (s.is_departure = latest_sample.is_departure))))
+             JOIN db.latest_sample ON (((s.trip_id = latest_sample.trip_id) AND (s.scheduled_time = latest_sample.scheduled_time) AND (s.station_id = latest_sample.station_id) AND (s.is_departure = latest_sample.is_departure))))
+          WHERE ((NOT s.cancelled) OR (latest_sample.id = s.id))
           GROUP BY (date_trunc('hour'::text, s.scheduled_time)), s.product_type_id, s.station_id, s.operator_id, s.is_departure,
                 CASE
                     WHEN (latest_sample.id = s.id) THEN NULL::int4range
@@ -623,6 +589,7 @@ CREATE MATERIALIZED VIEW db.sample_histogram AS
                     ELSE db.ttl_bucket_range(s.ttl_minutes)
                 END,
                 CASE
+                    WHEN (latest_sample.cancelled_with_substitute = true) THEN '(,)'::int4range
                     WHEN ((latest_sample.id = s.id) OR (s.delay_minutes IS NULL)) THEN db.delay_bucket_range(latest_sample.delay_minutes)
                     ELSE db.delay_bucket_range((latest_sample.delay_minutes - s.delay_minutes))
                 END, (db.ttl_bucket_range(latest_sample.ttl_minutes))) r
@@ -630,6 +597,47 @@ CREATE MATERIALIZED VIEW db.sample_histogram AS
 
 
 ALTER TABLE db.sample_histogram OWNER TO "public-transport-stats";
+
+--
+-- Name: sample_histogram_by_month; Type: MATERIALIZED VIEW; Schema: db; Owner: postgres
+--
+
+CREATE MATERIALIZED VIEW db.sample_histogram_by_month AS
+ SELECT sample_histogram.year,
+    sample_histogram.month,
+    sample_histogram.operator_id,
+    sample_histogram.is_departure,
+    sample_histogram.prior_ttl_bucket,
+    sample_histogram.prior_delay_bucket,
+    sample_histogram.latest_sample_ttl_bucket,
+    sample_histogram.latest_sample_delay_bucket,
+    sum(sample_histogram.sample_count) AS sample_count
+   FROM db.sample_histogram
+  GROUP BY sample_histogram.year, sample_histogram.month, sample_histogram.product_type_id, sample_histogram.operator_id, sample_histogram.is_departure, sample_histogram.prior_delay_bucket, sample_histogram.prior_ttl_bucket, sample_histogram.latest_sample_delay_bucket, sample_histogram.latest_sample_ttl_bucket
+  WITH NO DATA;
+
+
+ALTER TABLE db.sample_histogram_by_month OWNER TO postgres;
+
+--
+-- Name: sample_histogram_without_time; Type: MATERIALIZED VIEW; Schema: db; Owner: public-transport-stats
+--
+
+CREATE MATERIALIZED VIEW db.sample_histogram_without_time AS
+ SELECT sample_histogram.product_type_id,
+    sample_histogram.operator_id,
+    sample_histogram.is_departure,
+    sample_histogram.prior_ttl_bucket,
+    sample_histogram.prior_delay_bucket,
+    sample_histogram.latest_sample_ttl_bucket,
+    sample_histogram.latest_sample_delay_bucket,
+    sum(sample_histogram.sample_count) AS sample_count
+   FROM db.sample_histogram
+  GROUP BY sample_histogram.product_type_id, sample_histogram.operator_id, sample_histogram.is_departure, sample_histogram.prior_delay_bucket, sample_histogram.prior_ttl_bucket, sample_histogram.latest_sample_delay_bucket, sample_histogram.latest_sample_ttl_bucket
+  WITH NO DATA;
+
+
+ALTER TABLE db.sample_histogram_without_time OWNER TO "public-transport-stats";
 
 --
 -- Name: sample_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
@@ -901,6 +909,27 @@ GRANT USAGE ON SCHEMA db TO "public-transport-stats-read";
 
 
 --
+-- Name: TABLE remarks; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE db.remarks TO "public-transport-stats-read";
+
+
+--
+-- Name: TABLE sample; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE db.sample TO "public-transport-stats-read";
+
+
+--
+-- Name: TABLE latest_sample; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE db.latest_sample TO "public-transport-stats-read";
+
+
+--
 -- Name: TABLE load_factor; Type: ACL; Schema: db; Owner: public-transport-stats
 --
 
@@ -936,13 +965,6 @@ GRANT SELECT ON TABLE db.product_type TO "public-transport-stats-read";
 
 
 --
--- Name: TABLE remarks; Type: ACL; Schema: db; Owner: public-transport-stats
---
-
-GRANT SELECT ON TABLE db.remarks TO "public-transport-stats-read";
-
-
---
 -- Name: TABLE response_log; Type: ACL; Schema: db; Owner: public-transport-stats
 --
 
@@ -950,17 +972,24 @@ GRANT SELECT ON TABLE db.response_log TO "public-transport-stats-read";
 
 
 --
--- Name: TABLE sample; Type: ACL; Schema: db; Owner: public-transport-stats
---
-
-GRANT SELECT ON TABLE db.sample TO "public-transport-stats-read";
-
-
---
 -- Name: TABLE sample_histogram; Type: ACL; Schema: db; Owner: public-transport-stats
 --
 
 GRANT SELECT ON TABLE db.sample_histogram TO "public-transport-stats-read";
+
+
+--
+-- Name: TABLE sample_histogram_by_month; Type: ACL; Schema: db; Owner: postgres
+--
+
+GRANT SELECT ON TABLE db.sample_histogram_by_month TO "public-transport-stats-read";
+
+
+--
+-- Name: TABLE sample_histogram_without_time; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE db.sample_histogram_without_time TO "public-transport-stats-read";
 
 
 --
