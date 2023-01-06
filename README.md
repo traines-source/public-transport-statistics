@@ -11,6 +11,22 @@ Collecting traffic of realtime public transport APIs to calculate statistics abo
 * For programmatic access, please get in touch.
 * For access to the raw data (about 70GB per month), please get in touch.
 
+## Core principle
+
+### Example for one train leaving one station
+
+| Sample #					| scheduled_time	| projected_time	| delay_minutes		| sample_time		| ttl_minutes		|
+| -----						| -----				| -----				| -----				| -----				| -----				|
+| Sample 1 					| 2023-01-01 17:10	| 2023-01-01 17:10	| NULL				| 2023-01-01 16:00	| 70				|
+| Sample 2					| 2023-01-01 17:10	| 2023-01-01 17:11	| 1					| 2023-01-01 17:00	| 11				|
+| Sample 3 (latest_sample) 	| 2023-01-01 17:10	| 2023-01-01 17:27	| 17				| 2023-01-01 17:25	| 2					|
+| Sample 4					| 2023-01-01 17:10	| 2023-01-01 17:10	| NULL				| 2023-01-01 17:40	| -30				|
+
+
+We get multiple "samples", i.e. records of status from different points in time, for one arrival/departure of a train/bus/etc. at a station, e.g. ICE 100 scheduled to leave Berlin Hbf at 2023-01-01 17:10 (`scheduled_time`). Possibly at first (Sample 1), we do not get any live data, because the train has not yet departed from its origin station (`delay_minutes` is NULL). When we get closer to departure, i.e. the difference between `sample_time` and `projected_time` that is `ttl_minutes` diminishes, at some point we should get live data (Sample 2 and 3, `delay_minutes` not NULL). The delay will change over time. After the train has departed, for many providers, live data will be deleted for that departure (Sample 4, `delay_minutes` is NULL again).
+
+We qualify as "latest sample" the last sample (latest `sample_time`) that still has live data (`delay_minutes` set or trip cancelled, Sample 3 here). This is taken to be the actual final delay of this train at this station. The accuracy of that assumption depends on how close to the actual departure the sample was taken (`ttl_minutes`). More on that below (`latest_sample_ttl_bucket`).
+
 ## Core tables/views
 
 ### sample
@@ -44,22 +60,22 @@ The table where all samples are recorded. Many fields are based on [FPTF (Friend
 
 First aggregation step, this is basically an n-dimensional histogram (n being the number of dimension columns) that you can sum over to get coarser stats (but be careful how, see queries below).
 
-* scheduled_time
+* scheduled_time by hour
 * year, month, day, day_of_week, hour: extracted from scheduled_time in GMT
 * product_type_id
 * station_id
 * operator_id
 * is_departure
 * prior_ttl_bucket: time from sample_time until projected_time according to prior_delay, NULL without prior delay (i.e. actual final delay distribution).
-* prior_delay_bucket: prior delay, NULL without prior delay or for stops not yet having live data or being cancelled.
-* latest_sample_ttl_bucket: hopefully never NULL (INNER JOIN)
-* latest_sample_delay_bucket: when prior_delay_bucket set: relative delay, else absolute delay. NULL only when stop cancelled.
+* prior_delay_bucket: prior delay, NULL without prior delay or for stops not yet having live data.
+* latest_sample_ttl_bucket: Indicator for accuracy of latest_sample_delay. Hopefully never NULL (INNER JOIN)
+* latest_sample_delay_bucket: when prior_delay_bucket set: relative delay, else absolute delay. NULL only when stop cancelled.  '(,)' when stop cancelled but substitution trip running.
 * sample_count: number of samples falling in that bucket.
-* total_sample_count: sum of sample_count grouped by all fields except latest_sample_delay_bucket. Do not sum over this!
+* total_sample_count: sum of sample_count grouped by all fields except operator_id and latest_sample_delay_bucket. Do not sum over this!
 
 Buckets are using the postgres range type with familiar maths notation like `[-10,10)`.
 
-Revisiting the question from above: Given a train is currently delayed by `prior_delay_bucket` minutes and is thus projected to depart in `prior_ttl_bucket` minutes from now, what departure delay (i.e. what delay distribution `latest_sample_delay_bucket`) will it finally have? "Finally" being defined by `latest_sample_ttl_bucket`, since we do not actually have final delay times. As such, we take the "latest sample" for each trip-station-scheduled_time-is_departure combination we have and record the distance from this sample_time to the final projected_time. It is advisable to restrict `latest_sample_ttl_bucket` to something like `(-10,10]` to avoid skewing the delay distribution due to multiple reasons:
+Revisiting the question from above: Given a train is currently delayed by `prior_delay_bucket` minutes and is thus projected to depart in `prior_ttl_bucket` minutes from now, what departure delay (i.e. what delay distribution `latest_sample_delay_bucket`) will it finally have? "Finally" being defined by `latest_sample_ttl_bucket`, since we do not actually have final delay times. As such, we take the "latest sample" for each trip-station-scheduled_time-is_departure combination we have and record the duration from this sample_time to the final projected_time. It is advisable to restrict `latest_sample_ttl_bucket` to something like `(-10,10]` to avoid skewing the delay distribution due to multiple reasons:
 
 * if the delay is sampled too early before actual departure/arrival, delays might be underestimated (I think, because delays tend to increase more than decrease during the course of a trip)
 * if the delay is sampled much before actual departure/arrival, when for most trips, live data is not yet available, cancelled trips are overrepresented (since they are usually known earlier and only trips with live data or cancelled flag set are kept as "latest sample")

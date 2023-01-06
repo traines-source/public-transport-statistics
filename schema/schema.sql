@@ -71,13 +71,27 @@ CAST(
 	WHEN val < 60 THEN '[45,60)'
 	WHEN val < 75 THEN '[60,75)'
 	WHEN val < 90 THEN '[75,90)'
-	WHEN val > 90 THEN '[90,)'
+	WHEN val >= 90 THEN '[90,)'
 	ELSE NULL END
 	AS int4range
 ) AS delay_bucket$$;
 
 
 ALTER FUNCTION db.delay_bucket_range(val smallint) OWNER TO "public-transport-stats";
+
+--
+-- Name: refresh_histograms(); Type: PROCEDURE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE PROCEDURE db.refresh_histograms()
+    LANGUAGE sql
+    AS $$REFRESH MATERIALIZED VIEW latest_sample;
+REFRESH MATERIALIZED VIEW sample_histogram;
+REFRESH MATERIALIZED VIEW sample_histogram_by_month;
+REFRESH MATERIALIZED VIEW sample_histogram_without_time;$$;
+
+
+ALTER PROCEDURE db.refresh_histograms() OWNER TO "public-transport-stats";
 
 --
 -- Name: response_type_name(smallint); Type: FUNCTION; Schema: db; Owner: public-transport-stats
@@ -121,7 +135,7 @@ CAST(
 	WHEN val < 60 THEN '[45,60)'
 	WHEN val < 75 THEN '[60,75)'
 	WHEN val < 90 THEN '[75,90)'
-	WHEN val > 90 THEN '[90,)'
+	WHEN val >= 90 THEN '[90,)'
 	ELSE NULL END
 	AS int4range
 ) AS ttl_bucket$$;
