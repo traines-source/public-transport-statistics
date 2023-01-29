@@ -112,15 +112,15 @@ const parseStopovers = (stopovers, destination, provenance, parent_metadata, sam
     return out;
 }
 
-const parseAlternatives = (alternatives, is_departure, sample_time, fallback_station_id) => {
+const parseAlternatives = (alternatives, is_departure, sample_time, fallback_station) => {
     if (!alternatives) return [];
     const out = [];
     for (let alt of alternatives) {
         const parent_metadata = parseMetadata(alt, null, alt.stop?.loadFactor);
         out.push({            
             ...parent_metadata,
-            stations: parseStations([alt.stop, alt.destination, alt.origin]),
-            station_id: alt.stop?.id || fallback_station_id,
+            stations: parseStations([alt.stop, alt.destination, alt.origin, fallback_station]),
+            station_id: alt.stop?.id || fallback_station?.id,
             scheduled_time: alt.plannedWhen,
             projected_time: alt.when,
             is_departure: is_departure,
@@ -161,7 +161,7 @@ const parseTrip = (trip, sample_time) => {
     } else {
         out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, parent_metadata, sample_time, false));
     }
-    out.push(...parseAlternatives(trip.alternatives, true, sample_time, trip.origin.id));
+    out.push(...parseAlternatives(trip.alternatives, true, sample_time, trip.origin));
     return out;    
 }
 
@@ -188,7 +188,7 @@ const parseJourneys = (journeys, sample_time) => {
             }
         ];
         out.push(...parseStopovers(leg.stopovers, null, null, parent_metadata, sample_time, true));
-        out.push(...parseAlternatives(leg.alternatives, true, sample_time, leg.origin.id));
+        out.push(...parseAlternatives(leg.alternatives, true, sample_time, leg.origin));
         return out;
     }).flat()).flat();
 }
