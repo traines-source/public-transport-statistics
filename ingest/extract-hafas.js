@@ -43,18 +43,22 @@ const countRt = (raw_utf8) => {
 }
 
 const unmarshalHafasResponse = (line) => {
-    const data = JSON.parse(line);
-    if (Array.isArray(data) && data[1] == 'res') {
-        return JSON.parse(data[2]);
-    }
-    if (data.log) {
-        const res = JSON.parse(data.log);
-        if (res.svcResL) {
-            return res;
+    try {
+        const data = JSON.parse(line);
+        if (Array.isArray(data) && data[1] == 'res') {
+            return JSON.parse(data[2]);
         }
-    }
-    if (data.svcResL) {
-        return data;
+        if (data.log) {
+            const res = JSON.parse(data.log);
+            if (res.svcResL) {
+                return res;
+            }
+        }
+        if (data.svcResL) {
+            return data;
+        }
+    } catch (e) {
+        console.log('Invalid json log.', e);
     }
     return null;
 }
