@@ -230,8 +230,14 @@ GROUP BY s.year, s.month, od.category, od.delay_percentage_5min, od.delay_percen
 ```
 If you find more efficient or simpler variants of these queries (that are still (or more?) correct), let me know!
 
-## Credits
+## Related work
 
-Thanks to [@derhuerst](https://github.com/derhuerst) for his data support (and of course his work on [hafas-client](https://github.com/public-transport/hafas-client/) and [FPTF](https://github.com/public-transport/friendly-public-transport-format) and...).
-
-Also see https://github.com/dystonse/dystonse.
+* Thanks to [@derhuerst](https://github.com/derhuerst) for his data support
+* [hafas-client](https://github.com/public-transport/hafas-client/) 
+* [FPTF](https://github.com/public-transport/friendly-public-transport-format) – Friendly Public Transport Format
+* https://github.com/dystonse/dystonse – DYnamic STochastic ONline SEarch in public transport networks, with realtime data collection for statistics, but discontinued
+* https://tuprints.ulb.tu-darmstadt.de/6227/ – Computing Highly Reliable Train Journeys
+* https://drops.dagstuhl.de/opus/volltexte/2012/3701/ – Reliability and Delay Distributions of Train Connections
+* https://www.transit.land/ – Collection of GTFS(-RT) feeds (historic availability of realtime data?)
+* https://www.dkriesel.com/blog/2019/1229_video_und_folien_meines_36c3-vortrags_bahnmining – D. Kriesel's BahnMining
+* More? Let me know.
