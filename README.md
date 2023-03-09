@@ -232,10 +232,12 @@ If you find more efficient or simpler variants of these queries (that are still 
 
 ## Related work
 
-* Thanks to [@derhuerst](https://github.com/derhuerst) for his data support
-* [hafas-client](https://github.com/public-transport/hafas-client/) 
-* [FPTF](https://github.com/public-transport/friendly-public-transport-format) – Friendly Public Transport Format
+* Thanks to [@derhuerst](https://github.com/derhuerst) for his data support (and of course his work on [hafas-client](https://github.com/public-transport/hafas-client/) and [FPTF](https://github.com/public-transport/friendly-public-transport-format) and...).
 * https://github.com/dystonse/dystonse – DYnamic STochastic ONline SEarch in public transport networks, with realtime data collection for statistics, but discontinued
+* https://www.zugfinder.net/ – connecting train probabilities, delay statistics
+* http://puenktlichkeit.ch/ – delays in Switzerland
+* https://verspaetungen-sbb-zuege.opendata.iwi.unibe.ch/visualization.html – simple delay distributions Switzerland
+* https://observablehq.com/@alexmasselot/marey-like-timetable-geneva-lausanne, https://observablehq.com/@alexmasselot/mapping-swiss-trains-delays-over-one-day/2 – delays in a time-space diagram and on a map
 * https://tuprints.ulb.tu-darmstadt.de/6227/ – Computing Highly Reliable Train Journeys
 * https://drops.dagstuhl.de/opus/volltexte/2012/3701/ – Reliability and Delay Distributions of Train Connections
 * https://www.transit.land/ – Collection of GTFS(-RT) feeds (historic availability of realtime data?)
