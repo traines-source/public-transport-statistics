@@ -63,15 +63,16 @@ CAST(
 	WHEN val < 8 THEN '[7,8)'
 	WHEN val < 9 THEN '[8,9)'
 	WHEN val < 10 THEN '[9,10)'
-	WHEN val < 15 THEN '[10,15)'
-	WHEN val < 20 THEN '[15,20)'
-	WHEN val < 25 THEN '[20,25)'
-	WHEN val < 30 THEN '[25,30)'
-	WHEN val < 45 THEN '[30,45)'
-	WHEN val < 60 THEN '[45,60)'
-	WHEN val < 75 THEN '[60,75)'
-	WHEN val < 90 THEN '[75,90)'
-	WHEN val >= 90 THEN '[90,)'
+	WHEN val < 11 THEN '[10,11)'
+	WHEN val < 16 THEN '[11,16)'
+	WHEN val < 21 THEN '[16,21)'
+	WHEN val < 26 THEN '[21,26)'
+	WHEN val < 31 THEN '[26,31)'
+	WHEN val < 46 THEN '[31,46)'
+	WHEN val < 61 THEN '[46,61)'
+	WHEN val < 76 THEN '[61,76)'
+	WHEN val < 91 THEN '[76,91)'
+	WHEN val >= 91 THEN '[91,)'
 	ELSE NULL END
 	AS int4range
 ) AS delay_bucket$$;
@@ -85,10 +86,10 @@ ALTER FUNCTION db.delay_bucket_range(val smallint) OWNER TO "public-transport-st
 
 CREATE PROCEDURE db.refresh_histograms()
     LANGUAGE sql
-    AS $$REFRESH MATERIALIZED VIEW latest_sample;
-REFRESH MATERIALIZED VIEW sample_histogram;
-REFRESH MATERIALIZED VIEW sample_histogram_by_month;
-REFRESH MATERIALIZED VIEW sample_histogram_without_time;$$;
+    AS $$REFRESH MATERIALIZED VIEW db.latest_sample;
+REFRESH MATERIALIZED VIEW db.sample_histogram;
+REFRESH MATERIALIZED VIEW db.sample_histogram_by_month;
+REFRESH MATERIALIZED VIEW db.sample_histogram_without_time;$$;
 
 
 ALTER PROCEDURE db.refresh_histograms() OWNER TO "public-transport-stats";
@@ -121,7 +122,8 @@ CREATE FUNCTION db.ttl_bucket_range(val smallint) RETURNS int4range
     AS $$SELECT
 CAST(
 	CASE
-	WHEN val < -15 THEN '(,-15)'
+	WHEN val < -20 THEN '(,-20)'
+	WHEN val < -15 THEN '[-20,-15)'
 	WHEN val < -10 THEN '[-15,-10)'
 	WHEN val < -5 THEN '[-10,-5)'
 	WHEN val < 0 THEN '[-5,0)'
@@ -135,7 +137,13 @@ CAST(
 	WHEN val < 60 THEN '[45,60)'
 	WHEN val < 75 THEN '[60,75)'
 	WHEN val < 90 THEN '[75,90)'
-	WHEN val >= 90 THEN '[90,)'
+	WHEN val < 120 THEN '[90,120)'
+	WHEN val < 150 THEN '[120,150)'
+	WHEN val < 180 THEN '[150,180)'
+	WHEN val < 240 THEN '[180,240)'
+	WHEN val < 300 THEN '[240,300)'
+	WHEN val < 360 THEN '[300,360)'
+	WHEN val >= 360 THEN '[360,)'
 	ELSE NULL END
 	AS int4range
 ) AS ttl_bucket$$;
@@ -825,15 +833,6 @@ ALTER TABLE ONLY db.response_log
 
 ALTER TABLE ONLY db.station
     ADD CONSTRAINT station_id PRIMARY KEY (station_id);
-
-
---
--- Name: by_scheduled; Type: INDEX; Schema: db; Owner: public-transport-stats
---
-
-CREATE INDEX by_scheduled ON db.sample USING btree (scheduled_time);
-
-ALTER TABLE db.sample CLUSTER ON by_scheduled;
 
 
 --
