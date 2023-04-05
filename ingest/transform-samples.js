@@ -6,7 +6,8 @@ const parseStations = (stopOrStations) => {
             station_id: s.id,
             name: s.name,
             lon: s.location.longitude, 
-            lat: s.location.latitude
+            lat: s.location.latitude,
+            details: s
         };
         if (s.station) {
             child.parent = s.station.id; 
@@ -15,6 +16,7 @@ const parseStations = (stopOrStations) => {
                 name: s.station.name,
                 lon: s.station.location.longitude, 
                 lat: s.station.location.latitude,
+                details: s.station
             });
         }
         out.push(child);

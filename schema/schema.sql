@@ -690,7 +690,8 @@ CREATE TABLE db.station (
     station_id integer NOT NULL,
     lonlat point NOT NULL,
     name text NOT NULL,
-    parent integer
+    parent integer,
+    details jsonb
 );
 
 

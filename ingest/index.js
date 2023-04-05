@@ -212,7 +212,9 @@ const processSamples = async (target) => {
                 if (Math.abs(sample.ttl_minutes) > 24*60) {
                     ctrs.outside24h++;
                     if (result.delay_minutes != null) ctrs.outside24hWithRt++;
-                    if (Math.abs(sample.ttl_minutes) > 6*30*24*60) ctrs.outside6Months++;
+                    if (Math.abs(sample.ttl_minutes) > 6*30*24*60) {
+                        ctrs.outside6Months++;
+                    }
                     continue;
                 }
                 

@@ -54,8 +54,8 @@ const getKvMap = async (schema, table, key, value) => {
 }
 
 const upsertStations = async (schema, o) => {
-    const fmt = insertFormat(['station_id', 'lonlat', 'name', 'parent'], o);
-    await pgc.query('INSERT INTO '+schema+'.station ('+fmt.cols+') VALUES '+fmt.format+' ON CONFLICT (station_id) DO NOTHING', fmt.values);   
+    const fmt = insertFormat(['station_id', 'lonlat', 'name', 'parent', 'details'], o);
+    await pgc.query('INSERT INTO '+schema+'.station ('+fmt.cols+') VALUES '+fmt.format+' ON CONFLICT (station_id) DO UPDATE SET details = EXCLUDED.details', fmt.values);   
 }
 
 const upsertRemarks = async (schema, o) => {
