@@ -66,6 +66,7 @@ const parseDeparture = (obj) => {
     return {
         scheduled_time: obj.plannedDeparture,
         projected_time: obj.departure,
+        prognosis_type: obj.departurePrognosisType,
         is_departure: true,
         delay_seconds: obj.departureDelay,
         scheduled_platform: obj.plannedDeparturePlatform,
@@ -77,6 +78,7 @@ const parseArrival = (obj) => {
     return {
         scheduled_time: obj.plannedArrival,
         projected_time: obj.arrival,
+        prognosis_type: obj.arrivalPrognosisType,
         is_departure: false,
         delay_seconds: obj.arrivalDelay,
         scheduled_platform: obj.plannedArrivalPlatform,
@@ -125,6 +127,7 @@ const parseAlternatives = (alternatives, is_departure, sample_time, fallback_sta
             station_id: alt.stop?.id || fallback_station?.id,
             scheduled_time: alt.plannedWhen,
             projected_time: alt.when,
+            prognosis_type: alt.prognosisType,
             is_departure: is_departure,
             delay_seconds: alt.delay,
             sample_time: sample_time,

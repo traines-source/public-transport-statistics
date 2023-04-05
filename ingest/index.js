@@ -108,7 +108,8 @@ const processSamples = async (target) => {
     const foreignFields = {
         operator: { existing: await db.getOperatorMap(target.schema), missing: {} },
         load_factor: { existing: await db.getLoadFactorMap(target.schema), missing: {} },
-        product_type: { existing: await db.getProductTypeMap(target.schema), missing: {} }
+        product_type: { existing: await db.getProductTypeMap(target.schema), missing: {} },
+        prognosis_type: { existing: await db.getPrognosisTypeMap(target.schema), missing: {} }
     }
     for (const source of target.sources) {
         if (source.disabled) continue;
@@ -236,6 +237,7 @@ const processSamples = async (target) => {
                 setIfMissing(foreignFields.operator, sample.operator?.id, sample.operator);
                 setIfMissing(foreignFields.load_factor, sample.load_factor, sample.load_factor);
                 setIfMissing(foreignFields.product_type, sample.product_type, sample.product_type);
+                setIfMissing(foreignFields.prognosis_type, sample.prognosis_type, sample.prognosis_type);
             }
 
             ctrs.perf_parse += performance.now()-perf_start;
@@ -246,6 +248,7 @@ const processSamples = async (target) => {
                 await insertMissing(foreignFields.operator, db.insertOperators, target.schema);
                 await insertMissing(foreignFields.load_factor, db.insertLoadFactors, target.schema);
                 await insertMissing(foreignFields.product_type, db.insertProductTypes, target.schema);
+                await insertMissing(foreignFields.prognosis_type, db.insertPrognosisTypes, target.schema);
                 const relevantStationList = Object.values(relevantStations);
                 if (relevantStationList.length > 0) {
                     await db.upsertStations(target.schema, relevantStationList);
@@ -261,6 +264,7 @@ const processSamples = async (target) => {
                         sample.operator_id = foreignFields.operator.existing[sample.operator?.id];
                         sample.load_factor_id = foreignFields.load_factor.existing[sample.load_factor];
                         sample.product_type_id = foreignFields.product_type.existing[sample.product_type];
+                        sample.prognosis_type_id = foreignFields.prognosis_type.existing[sample.prognosis_type];
                     }
                     await db.insertSamples(target.schema, relevantSamples);
                 }

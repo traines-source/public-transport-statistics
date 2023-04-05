@@ -193,7 +193,8 @@ CREATE TABLE db.sample (
     scheduled_platform text,
     projected_platform text,
     load_factor_id smallint,
-    response_id integer NOT NULL
+    response_id integer NOT NULL,
+    prognosis_type_id smallint
 );
 
 
@@ -518,6 +519,40 @@ ALTER SEQUENCE db.product_type_product_type_id_seq OWNED BY db.product_type.prod
 
 
 --
+-- Name: prognosis_type; Type: TABLE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE TABLE db.prognosis_type (
+    prognosis_type_id smallint NOT NULL,
+    name text NOT NULL
+);
+
+
+ALTER TABLE db.prognosis_type OWNER TO "public-transport-stats";
+
+--
+-- Name: prognosis_type_prognosis_type_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
+--
+
+CREATE SEQUENCE db.prognosis_type_prognosis_type_id_seq
+    AS smallint
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE db.prognosis_type_prognosis_type_id_seq OWNER TO "public-transport-stats";
+
+--
+-- Name: prognosis_type_prognosis_type_id_seq; Type: SEQUENCE OWNED BY; Schema: db; Owner: public-transport-stats
+--
+
+ALTER SEQUENCE db.prognosis_type_prognosis_type_id_seq OWNED BY db.prognosis_type.prognosis_type_id;
+
+
+--
 -- Name: response_log; Type: TABLE; Schema: db; Owner: public-transport-stats
 --
 
@@ -719,6 +754,13 @@ ALTER TABLE ONLY db.product_type ALTER COLUMN product_type_id SET DEFAULT nextva
 
 
 --
+-- Name: prognosis_type prognosis_type_id; Type: DEFAULT; Schema: db; Owner: public-transport-stats
+--
+
+ALTER TABLE ONLY db.prognosis_type ALTER COLUMN prognosis_type_id SET DEFAULT nextval('db.prognosis_type_prognosis_type_id_seq'::regclass);
+
+
+--
 -- Name: response_log response_id; Type: DEFAULT; Schema: db; Owner: public-transport-stats
 --
 
@@ -813,6 +855,14 @@ ALTER TABLE ONLY db.product_type
 
 
 --
+-- Name: prognosis_type prognosis_type_pkey; Type: CONSTRAINT; Schema: db; Owner: public-transport-stats
+--
+
+ALTER TABLE ONLY db.prognosis_type
+    ADD CONSTRAINT prognosis_type_pkey PRIMARY KEY (prognosis_type_id);
+
+
+--
 -- Name: remarks remarks_pkey; Type: CONSTRAINT; Schema: db; Owner: public-transport-stats
 --
 
@@ -881,6 +931,14 @@ ALTER TABLE ONLY db.sample
 
 ALTER TABLE ONLY db.sample
     ADD CONSTRAINT product_type_id FOREIGN KEY (product_type_id) REFERENCES db.product_type(product_type_id);
+
+
+--
+-- Name: sample prognosis_type_id; Type: FK CONSTRAINT; Schema: db; Owner: public-transport-stats
+--
+
+ALTER TABLE ONLY db.sample
+    ADD CONSTRAINT prognosis_type_id FOREIGN KEY (prognosis_type_id) REFERENCES db.prognosis_type(prognosis_type_id);
 
 
 --
@@ -976,6 +1034,20 @@ GRANT SELECT ON TABLE db.operator TO "public-transport-stats-read";
 --
 
 GRANT SELECT ON TABLE db.product_type TO "public-transport-stats-read";
+
+
+--
+-- Name: TABLE prognosis_type; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE db.prognosis_type TO "public-transport-stats-read";
+
+
+--
+-- Name: SEQUENCE prognosis_type_prognosis_type_id_seq; Type: ACL; Schema: db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON SEQUENCE db.prognosis_type_prognosis_type_id_seq TO "public-transport-stats-read";
 
 
 --

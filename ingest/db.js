@@ -28,6 +28,10 @@ const getLoadFactorMap = (schema) => {
     return getKvMap(schema, 'load_factor', 'name', 'load_factor_id');   
 }
 
+const getPrognosisTypeMap = (schema) => {
+    return getKvMap(schema, 'prognosis_type', 'name', 'prognosis_type_id');   
+}
+
 const insertOperators = async (schema, o) => {
     const fmt = insertFormat(['id', 'name'], o);
     const operators = await pgc.query('INSERT INTO '+schema+'.operator ('+fmt.cols+') VALUES '+fmt.format+' RETURNING operator_id, id', fmt.values);
@@ -40,6 +44,10 @@ const insertProductTypes = (schema, values) => {
 
 const insertLoadFactors = (schema, values) => {
     return insertSingleColWithAutoincrement(schema, 'load_factor', 'load_factor_id', 'name', values);
+}
+
+const insertPrognosisTypes = (schema, values) => {
+    return insertSingleColWithAutoincrement(schema, 'prognosis_type', 'prognosis_type_id', 'name', values);
 }
 
 const insertSingleColWithAutoincrement = async (schema, table, pk_col, map_key_col, values) => {
@@ -71,7 +79,7 @@ const insertResponse = async (schema, response) => {
 
 const insertSamples = async (schema, samples) => {
     const fmt = insertFormat(
-        ['scheduled_time', 'projected_time', 'delay_minutes', 'cancelled', 'sample_time', 'ttl_minutes', 'trip_id', 'line_name', 'line_fahrtnr', 'product_type_id', 'product_name', 'station_id', 'operator_id', 'is_departure', 'remarks_hash', 'destination_provenance_id', 'scheduled_platform', 'projected_platform', 'load_factor_id', 'response_id'],
+        ['scheduled_time', 'projected_time', 'delay_minutes', 'cancelled', 'sample_time', 'ttl_minutes', 'trip_id', 'line_name', 'line_fahrtnr', 'product_type_id', 'product_name', 'station_id', 'operator_id', 'is_departure', 'remarks_hash', 'destination_provenance_id', 'scheduled_platform', 'projected_platform', 'load_factor_id', 'prognosis_type_id', 'response_id'],
         samples
     );
     await pgc.query('INSERT INTO '+schema+'.sample ('+fmt.cols+') VALUES '+fmt.format, fmt.values);
@@ -119,9 +127,11 @@ export default {
     getOperatorMap,
     getProductTypeMap,
     getLoadFactorMap,
+    getPrognosisTypeMap,
     insertOperators,
     insertProductTypes,
     insertLoadFactors,
+    insertPrognosisTypes,
     upsertStations,
     upsertRemarks,
     insertResponse,
