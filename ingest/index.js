@@ -144,6 +144,7 @@ const processSamples = async (target) => {
             remarks: 0,
             cancelled: 0,
             perf_read: 0,
+            perf_stringify: 0,
             perf_parse: 0,
             perf_persist: 0,
             perf_ctr: 0,
@@ -152,12 +153,17 @@ const processSamples = async (target) => {
         while ((result = await it.next())) {
             ctrs.perf_read += performance.now()-perf_start;
             ctrs.perf_ctr++;
-            perf_start = performance.now();
+            
             if (!validateResult(result, ctrs)) {
                 continue;
             }
+            
+            perf_start = performance.now();
             const str = JSON.stringify(result.response);
+            ctrs.perf_stringify += performance.now()-perf_start;
             const hash = md5(str);
+            perf_start = performance.now();
+
             if (responseHashes[hash]) {
                 ctrs.duplicates++;
                 continue;
