@@ -56,6 +56,11 @@ const insertSingleColWithAutoincrement = async (schema, table, pk_col, map_key_c
     return toKvMap(result.rows, map_key_col, pk_col);    
 }
 
+const getStationDetails = async (schema) => {
+    const kv = await pgc.query('SELECT details FROM '+schema+'.station');
+    return kv.rows;   
+}
+
 const getKvMap = async (schema, table, key, value) => {
     const kv = await pgc.query('SELECT '+key+', '+value+' FROM '+schema+'.'+table);
     return toKvMap(kv.rows, key, value);    
@@ -131,6 +136,7 @@ export default {
     getProductTypeMap,
     getLoadFactorMap,
     getPrognosisTypeMap,
+    getStationDetails,
     insertOperators,
     insertProductTypes,
     insertLoadFactors,

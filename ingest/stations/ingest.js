@@ -18,3 +18,5 @@ stations.full()
     if (i%1000==0) console.log(i);
 })
 .on('error', console.error)
+
+db.disconnect();
