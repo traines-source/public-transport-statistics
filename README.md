@@ -1,15 +1,21 @@
 # Public Transport Statistics
 
-Collecting traffic of realtime public transport APIs to calculate statistics about delays, cancellations, etc. of public transport (currently mainly in Germany). With a special focus on delay distributions (delay histograms) and conditional probabilities, to answer questions like "Given this train is currently delayed by 20 minutes and is thus projected to depart in 50 minutes from now, what departure delay (i.e. what delay distribution) will it finally have?"
+Collecting traffic of realtime public transport APIs and GTFS-RT feeds to calculate statistics about delays, cancellations, etc. of public transport. With a special focus on delay distributions (delay histograms) and conditional probabilities, to answer questions like "Given this train is currently delayed by 20 minutes and is thus projected to depart in 50 minutes from now, what departure delay (i.e. what delay distribution) will it finally have?"
 
 ## Access the results
 
-(Currently Germany (DB) only)
+(Currently Germany (DB) only; Belgium, France, Switzerland, Netherlands TBD)
 
 * Dashboard: https://stats.traines.eu
 * DB Querying (SQL): https://query.stats.traines.eu (user: guest-read@traines.eu pass: ptstats)
 * For programmatic access, please get in touch.
-* For access to the raw data (about 70GB per month), please get in touch.
+
+## Data sources
+
+* GTFS and GTFS-RT feeds of Belgium, France, Germany, Switzerland and the Netherlands (in most cases partial coverage, to be investigated), the archived data since 03/2023 is available at http://mirror.traines.eu (about 70 GB per month).
+* If you know of more at least country-level european GTFS-RT feeds (I know of Norway), let me know.
+* Traffic of realtime public transport APIs (from [TSTP](https://tespace.traines.eu) among others). For access to the raw data (about 20 GB per month), please get in touch.
+* [OpenStreetMap](openstreetmap.org/copyright) and [ZHV](https://zhv.wvigmbh.de/) data for station mapping.
 
 ## Core principle
 
