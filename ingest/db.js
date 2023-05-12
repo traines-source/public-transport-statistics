@@ -57,7 +57,7 @@ const insertSingleColWithAutoincrement = async (schema, table, pk_col, map_key_c
 }
 
 const getStationDetails = async (schema) => {
-    const kv = await pgc.query('SELECT details FROM '+schema+'.station');
+    const kv = await pgc.query('SELECT * FROM '+schema+'.station');
     return kv.rows;   
 }
 
