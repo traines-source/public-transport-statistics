@@ -95,7 +95,7 @@ const parseStopovers = (stopovers, destination, provenance, parent_metadata, sam
         if (stopover.plannedDeparture) {
             out.push({
                 ...parseMetadata(stopover, parent_metadata, stopover.stop.loadFactor),
-                stations: parseStations([stopover.stop]),
+                stations: parseStations([stopover.stop, destination]),
                 station_id: stopover.stop.id,
                 ...parseDeparture(stopover),
                 sample_time: sample_time,
@@ -105,7 +105,7 @@ const parseStopovers = (stopovers, destination, provenance, parent_metadata, sam
         if (stopover.plannedArrival) {
             out.push({
                 ...parseMetadata(stopover, parent_metadata, stopover.stop.loadFactor),
-                stations: parseStations([stopover.stop]),
+                stations: parseStations([stopover.stop, provenance]),
                 station_id: stopover.stop.id,
                 ...parseArrival(stopover),                    
                 sample_time: sample_time,

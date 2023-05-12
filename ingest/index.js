@@ -67,7 +67,7 @@ const formatSample = (sample) => {
     if (sample.sample_time) sample.ttl_minutes = Math.round(((sample.projected_time || sample.scheduled_time).getTime()-sample.sample_time.getTime())/1000/60);
     //sample.trip_id
     //sample.line_name
-    sample.line_fahrtnr = parseInt(sample.line_fahrtnr);
+    sample.line_fahrtnr = parseInt(sample.line_fahrtnr) || null;
     //sample.product_type_id
     //sample.product_name
     sample.station_id = parseInt(sample.station_id);
