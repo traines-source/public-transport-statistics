@@ -57,7 +57,7 @@ const insertSingleColWithAutoincrement = async (schema, table, pk_col, map_key_c
 }
 
 const getStationDetails = async (schema) => {
-    const kv = await pgc.query('SELECT * FROM '+schema+'.station');
+    const kv = await pgc.query('SELECT s.station_id, lonlat, name, details, lines FROM '+schema+'.station s LEFT JOIN (SELECT station_id, array_agg(DISTINCT line_name) AS lines FROM '+schema+'.sample GROUP BY station_id) l ON l.station_id = s.station_id');
     return kv.rows;   
 }
 
