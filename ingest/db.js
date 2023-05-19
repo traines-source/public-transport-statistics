@@ -86,11 +86,19 @@ const insertResponse = async (schema, response) => {
 }
 
 const insertSamples = async (schema, samples) => {
-    const fmt = insertFormat(
-        ['scheduled_time', 'projected_time', 'delay_minutes', 'cancelled', 'sample_time', 'ttl_minutes', 'trip_id', 'line_name', 'line_fahrtnr', 'product_type_id', 'product_name', 'station_id', 'operator_id', 'is_departure', 'remarks_hash', 'destination_provenance_id', 'scheduled_platform', 'projected_platform', 'load_factor_id', 'prognosis_type_id', 'response_id'],
+    const fmt = insertFormatArray(
+        {'scheduled_time':'timestamptz', 'projected_time':'timestamptz', 'delay_minutes':'smallint', 'cancelled':'boolean', 'sample_time':'timestamptz', 'ttl_minutes':'smallint', 'trip_id':'text', 'line_name':'text', 'line_fahrtnr':'int', 'product_type_id':'smallint', 'product_name':'text', 'station_id':'int', 'operator_id':'smallint', 'is_departure':'boolean', 'remarks_hash':'uuid', 'destination_provenance_id':'int', 'scheduled_platform':'text', 'projected_platform':'text', 'load_factor_id':'smallint', 'prognosis_type_id':'smallint', 'response_id':'int'},
         samples
     );
-    await pgc.query('INSERT INTO '+schema+'.sample ('+fmt.cols+') VALUES '+fmt.format, fmt.values);
+    await pgc.query('INSERT INTO '+schema+'.sample ('+fmt.cols+') SELECT * FROM UNNEST '+fmt.format, fmt.values);
+}
+
+const insertFormatArray = (columns, array) => {
+    const keys = Object.keys(columns);
+    const cols = keys.join(', ');
+    const format = valuesFormat(1, keys.length, keys.map(k => columns[k]));
+    const values = keys.map(col => array.map(row => row[col]));
+    return {cols, format, values};
 }
 
 const insertFormat = (columns, array) => {
@@ -100,9 +108,9 @@ const insertFormat = (columns, array) => {
     return {cols, format, values};
 }
 
-const valuesFormat = (rowNum, colNum) => {
-    let i = 1
-    return Array(rowNum).fill(0).map(v => '('+Array(colNum).fill(0).map(v => '$'+(i++)).join(', ')+')').join(', ')
+const valuesFormat = (rowNum, colNum, types) => {
+    let i = 1;
+    return Array(rowNum).fill(0).map(v => '('+Array(colNum).fill(0).map((v, coli) => '$'+(i++)+(types ? '::'+types[coli]+'[]' : '')).join(', ')+')').join(', ')
 }
 
 const toKvMap = (rows, key, value) => {
