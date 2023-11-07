@@ -105,6 +105,7 @@ const processSamples = async (target) => {
     let responseHashes = {};
     let sampleHashes = {};
     let errorOccurred = false;
+    let firstSampleTime = undefined;
     const foreignFields = {
         operator: { existing: await db.getOperatorMap(target.schema), missing: {} },
         load_factor: { existing: await db.getLoadFactorMap(target.schema), missing: {} },
@@ -114,7 +115,8 @@ const processSamples = async (target) => {
     for (const source of target.sources) {
         if (source.disabled) continue;
 
-        const it = responseReader(source, target.schema, true);
+        const identifier = target+'-'+source.sourceid;
+        const it = responseReader(source, identifier, true);
 
         let result;
         let rtDiffMin = 1000;
@@ -150,7 +152,8 @@ const processSamples = async (target) => {
             perf_ctr: 0,
         }
         let perf_start = performance.now();
-        while ((result = await it.next())) {
+        let continueWithNextFile = true;
+        while ((result = await it.next(continueWithNextFile))) {
             ctrs.perf_read += performance.now()-perf_start;
             ctrs.perf_ctr++;
             
@@ -214,6 +217,10 @@ const processSamples = async (target) => {
                     continue;
                 }
                 sampleHashes[sampleHash] = true;
+                if (sample.sample_time) {
+                    if (!firstSampleTime) firstSampleTime = sample.sample_time;
+                    else if (target.sources.length > 1 && sample.sample_time-firstSampleTime > 24*60*60) continueWithNextFile = false;
+                }
                 
                 sample = formatSample(sample);
                 if (Math.abs(sample.ttl_minutes) > 24*60) {
@@ -314,7 +321,8 @@ const processSamples = async (target) => {
 }
 
 
-for (const target of conf.targets) { 
+for (const target of conf.targets) {
+    if (target.disabled) continue;
     await processSamples(target);
 }
 
