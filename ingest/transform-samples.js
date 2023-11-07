@@ -86,11 +86,10 @@ const parseArrival = (obj) => {
     }
 }
 
-const parseStopovers = (stopovers, destination, provenance, parent_metadata, sample_time, omit_start_end) => {
-    //omit_start_end = false;
+const parseStopovers = (stopovers, destination, provenance, parent_metadata, sample_time) => {
     if (!stopovers) return [];
     const out = [];
-    for (let i=omit_start_end?1:0; i<stopovers.length-(omit_start_end?1:0); i++) {
+    for (let i=0; i<stopovers.length; i++) {
         let stopover = stopovers[i];
         if (stopover.plannedDeparture) {
             out.push({
@@ -135,8 +134,8 @@ const parseAlternatives = (alternatives, is_departure, sample_time, fallback_sta
             scheduled_platform: alt.plannedPlatform,
             projected_platform: alt.platform
         });
-        out.push(...parseStopovers(alt.previousStopovers, alt.origin, alt.destination, parent_metadata, sample_time, false));
-        out.push(...parseStopovers(alt.nextStopovers, alt.origin, alt.destination, parent_metadata, sample_time, false));    
+        out.push(...parseStopovers(alt.previousStopovers, alt.origin, alt.destination, parent_metadata, sample_time));
+        out.push(...parseStopovers(alt.nextStopovers, alt.origin, alt.destination, parent_metadata, sample_time));    
     }
     return out;
 }
@@ -144,27 +143,27 @@ const parseAlternatives = (alternatives, is_departure, sample_time, fallback_sta
 const parseTrip = (trip, sample_time) => {
     const parent_metadata = parseMetadata(trip, null, trip.origin.loadFactor, trip.departure);
     const out = [];
-    if (!trip.stopovers?.length) {
-        out.push(
-            {
-                ...parent_metadata,
-                stations: parseStations([trip.origin]),
-                station_id: trip.origin.id,
-                ...parseDeparture(trip),
-                sample_time: sample_time,
-                destination_provenance_id: trip.destination?.id,                
-            },
-            {
-                ...parseMetadata(trip, null, trip.destination.loadFactor, trip.arrival),
-                stations: parseStations([trip.destination]),
-                station_id: trip.destination.id,
-                ...parseArrival(trip),                    
-                sample_time: sample_time,
-                destination_provenance_id: trip.origin?.id,
-            }
-        );
-    } else {
-        out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, parent_metadata, sample_time, false));
+    
+    out.push(
+        {
+            ...parent_metadata,
+            stations: parseStations([trip.origin]),
+            station_id: trip.origin.id,
+            ...parseDeparture(trip),
+            sample_time: sample_time,
+            destination_provenance_id: trip.destination?.id,                
+        },
+        {
+            ...parseMetadata(trip, null, trip.destination.loadFactor, trip.arrival),
+            stations: parseStations([trip.destination]),
+            station_id: trip.destination.id,
+            ...parseArrival(trip),                    
+            sample_time: sample_time,
+            destination_provenance_id: trip.origin?.id,
+        }
+    );
+    if (trip.stopovers?.length) {
+        out.push(...parseStopovers(trip.stopovers, trip.origin, trip.destination, parent_metadata, sample_time));
     }
     out.push(...parseAlternatives(trip.alternatives, true, sample_time, trip.origin));
     return out;    
@@ -192,7 +191,7 @@ const parseJourneys = (journeys, sample_time) => {
                 destination_provenance_id: null,
             }
         ];
-        out.push(...parseStopovers(leg.stopovers, null, null, parent_metadata, sample_time, true));
+        out.push(...parseStopovers(leg.stopovers, null, null, parent_metadata, sample_time));
         out.push(...parseAlternatives(leg.alternatives, true, sample_time, leg.origin));
         return out;
     }).flat()).flat();
