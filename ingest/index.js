@@ -44,7 +44,8 @@ const formatResponse = (result, hash, source, sampleCount, rtTime) => {
         "departures": 1,
         "arrivals": 2,
         "trip": 3,
-        "refreshJourney": 4
+        "refreshJourney": 4,
+        "gtfsrt": 5
     }
     return {
         hash: hash,

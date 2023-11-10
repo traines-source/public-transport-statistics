@@ -5,10 +5,10 @@ import {exec} from 'child_process';
 
 import {extractHafas} from './extract-hafas.js'
 import {extractFptf} from './extract-fptf.js'
+import {extractGtfsrt} from './extract-gtfsrt.js';
 import {conf} from './read-conf.js'
 
-
-const findNextFile = (source, lastSuccessful) => {
+const findFiles = (source) => {
     return new Promise((done, failed) => {
         glob(source.matches, {}, function (er, files) {
             if (er) {
@@ -16,24 +16,33 @@ const findNextFile = (source, lastSuccessful) => {
                 return;
             }
             console.log('Source ID '+source.sourceid+': '+files.length+' files');
-            if (!lastSuccessful) {
-                done(files[0]);
-                return;
-            }
-            for (let i=0; i<files.length-1; i++) {
-                if (lastSuccessful == files[i]) {
-                    done(files[i+1]);
-                    return;
-                }
-            }
-            done(null);
+            done(files);
         });
     });
 }
 
+const getFilesIterator = async (source) => {
+    const files = await findFiles(source);
+    return {
+        next: (lastSuccessful) => {
+            if (!lastSuccessful) {
+                return files[0];
+            }
+            for (let i=0; i<files.length-1; i++) {
+                if (lastSuccessful == files[i]) {
+                    return files[i+1];
+                }
+            }
+            return null;
+        }
+    }
+}
+
 const fileReader = {
     'hafas': extractHafas,
-    'fptf': extractFptf
+    'fptf': extractFptf,
+    'gtfsrt': extractGtfsrt,
+    'noop': (uncompressedFile, identifier) => uncompressedFile
 }
 
 const decompressFile = (cmdToStdout, file, sourceid, slot) => {
@@ -50,24 +59,25 @@ const decompressFile = (cmdToStdout, file, sourceid, slot) => {
     });
 }
 
-const decompressTar = (file, sourceid, slot) => {
+const decompressFolder = (cmd, dirflag, file, sourceid, slot) => {
     const uncompressedDir = conf.working_dir+sourceid+'.'+slot+'.uncompressed/';
     return new Promise((done, failed) => {
         fs.rmSync(uncompressedDir, { recursive: true, force: true });
-        exec("tar xjf "+file+" -C "+uncompressedDir, (err, stdout, stderr) => {
+        exec(cmd+file+dirflag+uncompressedDir, (err, stdout, stderr) => {
             if (err) {
                 err.stderr = stderr;
                 failed(err);
                 return;
             }              
-            done({uncompressed: uncompressedFile, file: file});
+            done({uncompressed: uncompressedDir, file: file});
         });
     });
 }
 
 const fileLoader = {
     'bz2-bulks': (file, sourceid, slot) => decompressFile("bzip2 -k -d -c ", file, sourceid, slot),
-    'bz2-tar': (file, sourceid, slot) => decompressTar(file, sourceid, slot),
+    'bz2-tar': (file, sourceid, slot) => decompressFolder("tar -xjf ", " -C " , file, sourceid, slot),
+    'unzip': (file, sourceid, slot) => decompressFolder("unzip ", " -d " , file, sourceid, slot),
     'gzip-bulks': (file, sourceid, slot) => decompressFile("gzip -k -d -c ", file, sourceid, slot),
     'gzip-single': (file, sourceid, slot) => Promise.resolve({uncompressed: file, file: file})
 }
@@ -87,14 +97,14 @@ const updateLastSuccessful = (lastFile, identifier, update) => {
     return checkpoints[identifier];
 }
 
-let uncompressingJobs = {};
+const uncompressingJobs = {};
 
-const findAndOpenNextFile = async (source, identifier, lastSuccessful) => {
+const findAndOpenNextFile = async (source, identifier, filesIterator, lastSuccessful) => {
     if (!uncompressingJobs[identifier]) {
         uncompressingJobs[identifier] = {file: null, slot: 'slot0'};
     }
     let uncompressing = uncompressingJobs[identifier];
-    let file = await findNextFile(source, lastSuccessful);
+    let file = filesIterator.next(lastSuccessful);
     console.log(file);
     if (!file) return {file: null, fileReader: null};    
     if (!uncompressing.file) {
@@ -106,17 +116,18 @@ const findAndOpenNextFile = async (source, identifier, lastSuccessful) => {
         return {file: null, fileReader: null};
     }
     console.log('File', file, ' loaded.');
-    let nextFile = await findNextFile(source, file);
+    let nextFile = filesIterator.next(file);
     if (nextFile) {    
         console.log('Preloading file', nextFile);
         uncompressing.slot = uncompressing.slot == 'slot0' ? 'slot1' : 'slot0';
         uncompressing.file = fileLoader[source.compression](nextFile, source.sourceid, uncompressing.slot);
     }
-    return {file: file, fileReader: fileReader[source.type](loadedFile.uncompressed)};
+    return {file: file, fileReader: fileReader[source.type](loadedFile.uncompressed, identifier)};
 }
 
 const responseReader = (source, identifier, update) => {
     let iterator;
+    let filesIterator = await getFilesIterator(source);
     let lastFile;
     let i = 0;
     return {
@@ -130,7 +141,7 @@ const responseReader = (source, identifier, update) => {
                         done(null);
                         return;
                     }
-                    findAndOpenNextFile(source, identifier, lastSuccessful).then(({file, fileReader}) => {
+                    findAndOpenNextFile(source, identifier, filesIterator, lastSuccessful).then(({file, fileReader}) => {
                         iterator = fileReader;
                         lastFile = file;
                         if (!iterator || source.upToFile != undefined && file == source.upToFile) {
@@ -162,5 +173,7 @@ const responseReader = (source, identifier, update) => {
 }
 
 export {
-    responseReader
+    responseReader,
+    findAndOpenNextFile,
+    getFilesIterator
 }

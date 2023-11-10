@@ -13,9 +13,11 @@
 		"node": ">=16"
 	},
 	"dependencies": {
+		"csv-parser": "^3.0.0",
 		"date-fns": "^2.29.3",
 		"db-hafas-stations": "^1.0.0",
 		"glob": "^8.0.3",
+		"gtfs-realtime-bindings": "^1.1.1",
 		"hafas-client": "^6.0.0",
 		"md5": "^2.3.0",
 		"n-readlines": "^1.0.1",
