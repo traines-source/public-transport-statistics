@@ -1,6 +1,6 @@
-import nReadlines from 'n-readlines'
-import gzip from 'node-gzip'
-import {parse} from 'date-fns'
+import nReadlines from 'n-readlines';
+import gzip from 'node-gzip';
+import {parse} from 'date-fns';
 
 const logEntryDetector = Buffer.from('[').readUint8(0);
 const newline = Buffer.from([0x0a]);
@@ -47,7 +47,7 @@ const isNewEntry = (line) => {
     return false; 
 }
 
-const extractFptf = (file) => {
+const extractFptf = async (file) => {
     let readLines = [];
     const lines = new nReadlines(file);
     return {

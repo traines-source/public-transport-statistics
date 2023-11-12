@@ -1,7 +1,11 @@
 import csv from 'csv-parser';
+import stripBomStream from 'strip-bom-stream';
+import glob from 'glob';
+import fs from 'fs';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
-import {findAndOpenNextFile, getFilesIterator} from './read-response.js'
+import {findAndOpenNextFile, getFilesIterator} from './read-response.js';
 
+const randomOfflineSamplesNumber = 3;
 
 const findFiles = (dir) => {
     return new Promise((done, failed) => {
@@ -17,9 +21,11 @@ const findFiles = (dir) => {
 
 const getValidUntil = (gtfsFilesIterator, current) => {
     const next = gtfsFilesIterator.next(current);
+    console.log(next);
     if (next) {
         const mtime = new Date(fs.statSync(next).mtimeMs);
-        return new Date(mtime.getFullYear, mtime.getMonth(), mtime.getDate(), 14, 0, 0, 0).getTime()/1000;
+        console.log(mtime);
+        return new Date(mtime.getFullYear(), mtime.getMonth(), mtime.getDate(), 14, 0, 0, 0).getTime()/1000;
     }
     return null;
 }
@@ -27,10 +33,11 @@ const getValidUntil = (gtfsFilesIterator, current) => {
 const gtfsCache = {};
 
 
-const parseCsv = async (file, setRow, columns) => {
+const parseCsv = async (file, setRow) => {
     return new Promise((done) => {
         fs.createReadStream(file)
-        .pipe(csv(columns))
+        .pipe(stripBomStream())
+        .pipe(csv())
         .on('data', setRow)
         .on('end', () => {
             console.log('done reading', file);
@@ -39,34 +46,44 @@ const parseCsv = async (file, setRow, columns) => {
     });
 }
 
+const filterFields = (row, columns) => {
+    const filtered = {};
+    for (const col of columns) {
+        filtered[col] = row[col];
+    }
+    return filtered;
+}
+
 const parseGtfsCsv = async (cache, directory, type, key, columns) => {
     const results = {};
-    await parseCsv(directory+type+'.txt', (row) => results[row[key]] = row, [key, ...columns]);
+    await parseCsv(directory+type+'.txt', (row) => results[row[key]] = filterFields(row, [key, ...columns]));
     cache[type] = results;
 }
 
-const loadGtfs = (directory, identifier) => {
-    const cache = gtfsCache[identifier]['data'];
+const loadGtfs = async (cache, directory, identifier) => {
     await parseGtfsCsv(cache, directory, 'agency', 'agency_id', ['agency_name']);
     await parseGtfsCsv(cache, directory, 'stops', 'stop_id', ['stop_name', 'stop_lat', 'stop_lon', 'parent_station', 'platform_code']);
     await parseGtfsCsv(cache, directory, 'routes', 'route_id', ['agency_id', 'route_short_name', 'route_type', 'route_desc']);
     await parseGtfsCsv(cache, directory, 'trips', 'trip_id', ['route_id', 'trip_short_name']);
-    await parseGtfsCsv(cache, directory, 'stop_times', 'trip_id', ['arrival_time', 'departure_time', 'stop_id', 'stop_sequence']);
-    await parseCsv(directory+type+'.txt', (row) => {
+    console.log(Object.keys(cache['trips']).length, cache['trips'][Object.keys(cache['trips'])[0]]);
+    await parseCsv(directory+'stop_times.txt', (row) => {
+        //console.log(row['trip_id'], row);
         const trip = cache['trips'][row['trip_id']];
         if (!trip['stop_times']) trip['stop_times'] = [];
-        trip['stop_times'].push(row);
-    }, ['trip_id', 'arrival_time', 'departure_time', 'stop_id', 'stop_sequence']);
+        trip['stop_times'].push(filterFields(row, ['arrival_time', 'departure_time', 'stop_id', 'stop_sequence']));
+    });
 }
 
 const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile) => {
     let previousGtfs = undefined;
     while (timestamp > gtfsCache[identifier]['validUntil']) {
         previousGtfs = gtfsCache[identifier]['file'];
-        gtfsCache[identifier]['file'] = filesIterator.next(gtfsCache[identifier]['file']);
-        gtfsCache[identifier]['validUntil'] = getValidUntil(gtfsFilesIterator, currentGtfs);
+        gtfsCache[identifier]['file'] = gtfsFilesIterator.next(gtfsCache[identifier]['file']);
+        gtfsCache[identifier]['validUntil'] = getValidUntil(gtfsFilesIterator, gtfsCache[identifier]['file']);
+        console.log(gtfsCache[identifier]['file'], gtfsCache[identifier]['validUntil'])
         if (!gtfsCache[identifier]['file'] || !gtfsCache[identifier]['validUntil']) {
-            throw new Error('missing up to date GTFS');
+            console.log('stopping. missing up to date GTFS');
+            return false;
         }
     }
     if (previousGtfs != undefined) {
@@ -74,8 +91,9 @@ const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtf
         const open = await findAndOpenNextFile(gtfsSource, identifier, gtfsFilesIterator, previousGtfs);
         if (open.file != gtfsCache[identifier]['file'])
             throw Error('file mismatch');
-        gtfsCache[identifier]['data'] = loadGtfs(open.fileReader);
+        await loadGtfs(gtfsCache[identifier]['data'], open.fileReader, identifier);
     }
+    return true;
 }
 
 const productType = (id) => {
@@ -96,7 +114,7 @@ const productType = (id) => {
 const parseStations = (stopId, gtfs) => {
     const out = [];
     const s = gtfs.stops[stopId];
-    if (!s) continue;
+    if (!s) return out;
     const child = {
         station_id: s.stop_id,
         name: s.stop_name,
@@ -105,7 +123,7 @@ const parseStations = (stopId, gtfs) => {
     };
     if (s.parent_station) {
         child.parent = s.parent_station; 
-        const p = gtfs.stops[stopId];
+        const p = gtfs.stops[s.parent_station];
         out.push({
             station_id: p.stop_id,
             name: p.stop_name,
@@ -117,27 +135,46 @@ const parseStations = (stopId, gtfs) => {
     return out;
 }
 
-const joinTime = (startDate, scheduledTimeStr, realTime, interpolated)  => {
-    const parts = scheduledTimeStr.split(':');
-    const hours = parseInt(parts[0]);
-    const minutes = parseInt(parts[1]);
-    const seconds = parseInt(parts[3]);
+const splitTimeStr = (s) => {
+    const parts = s.split(':');
+    return {
+        hours: parseInt(parts[0]),
+        minutes: parseInt(parts[1]),
+        seconds: parseInt(parts[2])
+    };
+}
 
+const calculateStartTime = (trip, tripUpdate) => {
+    const scheduled = splitTimeStr(trip.stop_times[0].departure_time);
+    const startDate = tripUpdate.trip.startDate;
+    const startTime = tripUpdate.trip.startTime ? splitTimeStr(tripUpdate.trip.startTime) : scheduled;
+    const noonMinus12 = new Date(
+        parseInt(startDate.substring(0,4)),
+        parseInt(startDate.substring(4,6))-1,
+        parseInt(startDate.substring(6,8)),
+        12+startTime.hours-scheduled.hours
+    ).getTime()/1000-12*60*60;
+    return noonMinus12;
+}
+
+const joinTime = (startTime, scheduledTimeStr, realTime, previousDelay)  => {
+    const scheduledTime = splitTimeStr(scheduledTimeStr);
     let scheduledDatetime;
     let realDatetime = null;
     let delaySeconds = null;
 
-    if (!startDate) throw Error('Date fallback not implemented');
-    const noonMinus12 = new Date(parseInt(startDate.substring(0,4)), parseInt(startDate.substring(4,6))-1, parseInt(startDate.substring(6,8)), 12).getTime()/1000-12*60*60;
-    scheduledDatetime = new Date((noonMinus12+(hours*60+minutes)*60+seconds)*1000);
+    if (!startTime) throw Error('Date fallback not implemented');
+    scheduledDatetime = (startTime+(scheduledTime.hours*60+scheduledTime.minutes)*60+scheduledTime.seconds)*1000;
 
-    if (realTime && realTime.delay) {
-        delaySeconds = realTime.delay.toNumber();
-        realDatetime = new Date(scheduledDatetime.getTime()+delaySeconds*1000);
-    } else if (realTime &&  realTime.time && !interpolated) {
-        delaySeconds = realTime.time.toNumber()-scheduledDatetime.getTime()/1000;
-        if (delaySeconds > 12*60*60) throw Error('Delay of more than 12 hours');
-        realDatetime = new Date(realTime.time.toNumber()*1000);
+    if (realTime && realTime.delay != undefined) {
+        delaySeconds = realTime.delay;
+        realDatetime = scheduledDatetime+delaySeconds*1000;
+    } else if (realTime && realTime.time) {
+        delaySeconds = realTime.time.toNumber()-scheduledDatetime/1000;
+        realDatetime = realTime.time.toNumber()*1000;
+    } else if (previousDelay != null) {
+        delaySeconds = previousDelay;
+        realDatetime = scheduledDatetime+delaySeconds*1000;
     }
     
     return {scheduled: scheduledDatetime, real: realDatetime, delay: delaySeconds}
@@ -147,108 +184,172 @@ const populateSample = (meta, is_departure, time, destination_provenance_id, pre
     const s = {
         ...meta,
         scheduled_time: time.scheduled,
-        projected_time: time.real,
-        delay_seconds: time.delay,
+        projected_time: meta.cancelled ? null : time.real,
+        delay_seconds: meta.cancelled ? null : time.delay,
         is_departure: is_departure,                        
         destination_provenance_id: destination_provenance_id
     };
     if (previousSample) {
-        previousSample.scheduled_duration = (s.scheduled_time.getTime()-previousSample.scheduled_time.getTime())/1000;
-        previousSample.projected_duration = (s.projected_time.getTime()-previousSample.projected_time.getTime())/1000;
+        previousSample.scheduled_duration_minutes = Math.round((s.scheduled_time-previousSample.scheduled_time)/1000/60);
+        if (s.projected_time && previousSample.projected_time) {
+            previousSample.projected_duration_minutes = Math.round((s.projected_time-previousSample.projected_time)/1000/60);
+        }
     }
     return s;
 }
 
-// todo offline samples, update schema (int2str, duration), incremental matview
-const assembleResponse = async (data, identifier, sampleTime) => {
-    const samples = [];
-    const gtfs = gtfsCache[identifier]['data'];
-    for (let i=0; i<data.entity.length; i++) {
-        if (data.entity[i].trip_update) {
-            const u = data.entity[i].trip_update;
-            const trip = gtfs.trips[u.trip.trip_id];
-            if (!trip) continue;
-            const route = gtfs.routes[trip.route_id];
-
-            let stopTimeUpdate = null;
-            let previousSample = null;
-            let jUpdate = 0;
-            for (let j=0; j<trip.stop_times; j++) {
-                const stopTime = trip.stop_times[j];
-                if (u.stop_time_update?.length > jUpdate+1 && u.stop_time_update[jUpdate+1].stop_id == stopTime.stop_id) jUpdate++;
-                if (u.stop_time_update && u.stop_time_update[jUpdate].stop_id == stopTime.stop_id) stopTimeUpdate = u.stop_time_update[jUpdate];
-
-                const meta = {
-                    cancelled: u.schedule_relationship == GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED ||
-                        stopTimeUpdate?.schedule_relationship == GtfsRealtimeBindings.transit_realtime.StopTimeUpdate.ScheduleRelationship.SKIPPED,
-                    sample_time: sampleTime,
-                    trip_id: trip.trip_id,
-                    line_name: route.route_short_name,
-                    line_fahrtnr: trip.trip_short_name,
-                    product_type: productType(parseInt(route.route_type)),
-                    product_name: route.route_type,
-                    station_id: stopTime.stop_id,
-                    stations: parseStations(stopTime.stop_id),
-                    operator:  {
-                        id: route.agency_id,
-                        name: gtfs.agency[route.agency_id].agency_name
-                    },
-                    stop_number: parseInt(stopTime.stop_sequence),
-                    //remarks, 
-                    //scheduled_platform
-                    //projected_platform
-                    //load_factor
-                    //response_id
-                }
-                if (stopTimeUpdate?.arrival || meta.cancelled && stopTime.arrival_time) {
-                    let time = joinTime(u.start_date, stopTime.arrival_time, stopTimeUpdate?.arrival, stopTimeUpdate?.stop_id != stopTime.stop_id);
-                    previousSample = populateSample(meta, false, time, trip.stop_times[0].stop_id, previousSample)
-                    samples.push(previousSample);
-                }
-                if (stopTimeUpdate?.departure || meta.cancelled && stopTime.departure_time) {
-                    let time = joinTime(u.start_date, stopTime.departure_time, stopTimeUpdate?.departure, stopTimeUpdate?.stop_id != stopTime.stop_id);
-                    previousSample = populateSample(meta, true, time, trip.stop_times[trip.stop_times.length-1].stop_id, previousSample)
-                    samples.push(previousSample);
-                } else {
-                    previousSample = null;
-                }
-            }
-        } else {
-            console.log('ignoring entity type');
-        }
-    }    
-    return {response: samples, ts: sampleTime, type: 'gtfsrt', expectedRtCount: samples.length, err: null};
+const matchesStopTime = (stopTime, stopTimeUpdate) => {
+    return stopTimeUpdate?.stopId == stopTime.stop_id || stopTimeUpdate?.stopSequence == parseInt(stopTime.stop_sequence)
 }
 
-const extractGtfsrt = (dir, identifier) => {
+const isCancelled = (tripCancelled, stopTimeUpdate, previousCancelled) => {
+    if (tripCancelled) {
+        return tripCancelled;
+    }
+    if (stopTimeUpdate) {
+        return stopTimeUpdate.scheduleRelationship == GtfsRealtimeBindings.transit_realtime.TripUpdate.StopTimeUpdate.ScheduleRelationship.SKIPPED;
+    }
+    return previousCancelled;
+}
+
+const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
+    const route = gtfs.routes[trip.route_id];
+    const tripCancelled = tripUpdate.trip.scheduleRelationship == GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED;
+    const startTime = calculateStartTime(trip, tripUpdate);
+    let previousSample = null;
+    let jUpdate = 0;
+    let expectedRtCount = 0;
+    let previousDelay = null;
+    let previousCancelled = false;
+    for (let j=0; j<trip.stop_times.length; j++) {
+        const stopTime = trip.stop_times[j];
+        let stopTimeUpdate = null;
+        if (tripUpdate.stopTimeUpdate?.length > jUpdate+1 && matchesStopTime(stopTime, tripUpdate.stopTimeUpdate[jUpdate+1])) {
+            jUpdate++;
+            stopTimeUpdate = tripUpdate.stopTimeUpdate[jUpdate];
+        } else if (jUpdate == 0 && tripUpdate.stopTimeUpdate && matchesStopTime(stopTime, tripUpdate.stopTimeUpdate[jUpdate])) {
+            stopTimeUpdate = tripUpdate.stopTimeUpdate[jUpdate];
+        }
+
+        const meta = {
+            cancelled: isCancelled(tripCancelled, stopTimeUpdate, previousCancelled),
+            sample_time: sampleTime,
+            trip_id: trip.trip_id,
+            line_name: route.route_short_name,
+            line_fahrtnr: trip.trip_short_name,
+            product_type: productType(parseInt(route.route_type)),
+            product_name: route.route_type,
+            station_id: stopTime.stop_id,
+            stations: parseStations(stopTime.stop_id, gtfs),
+            operator:  {
+                id: route.agency_id,
+                name: gtfs.agency[route.agency_id].agency_name
+            },
+            stop_number: parseInt(stopTime.stop_sequence),
+            //remarks, 
+            //scheduled_platform
+            //projected_platform
+            //load_factor
+            //response_id
+        }
+        previousCancelled = meta.cancelled;
+        if ((stopTimeUpdate?.arrival || stopTime.arrival_time) && j != 0) {
+            let time = joinTime(startTime, stopTime.arrival_time, stopTimeUpdate?.arrival, previousDelay);
+            previousDelay = time.delay;            
+            previousSample = populateSample(meta, false, time, trip.stop_times[0].stop_id, previousSample)
+            samples.push(previousSample);
+            if (time.delay != null && !meta.cancelled) expectedRtCount++;
+        }
+        if ((stopTimeUpdate?.departure || stopTime.departure_time) && j != trip.stop_times.length-1) {
+            let time = joinTime(startTime, stopTime.departure_time, stopTimeUpdate?.departure, previousDelay);
+            previousDelay = time.delay;
+            previousSample = populateSample(meta, true, time, trip.stop_times[trip.stop_times.length-1].stop_id, previousSample)
+            samples.push(previousSample);
+            if (time.delay != null && !meta.cancelled) expectedRtCount++;
+        } else {
+            previousSample = null;
+        }
+    }
+    return expectedRtCount;
+}
+
+const createRandomOfflineSamples = (gtfs, trip, tripUpdate, sampleTime, samples) => {
+    if (!trip.receivedRealtime || !trip.receivedRealtime[tripUpdate.trip.startDate]) {
+        for (let k=0; k<randomOfflineSamplesNumber; k++) {
+            const randomSampleTime = Math.round(sampleTime-Math.random()*10*60*60);
+            handleTrip(gtfs, trip, {trip: {startDate: tripUpdate.trip.startDate}}, randomSampleTime, samples);
+        }
+        if (!trip.receivedRealtime) trip.receivedRealtime = {};
+        trip.receivedRealtime[tripUpdate.trip.startDate] = true;
+    }
+}
+
+const assembleResponse = async (data, gtfs, sampleTime, fallbackSampleTime) => {
+    const samples = [];
+    let expectedRtCount = 0;
+    let unknownEntityType = 0;
+    let unscheduled = 0;
+    for (let i=0; i<data.entity.length; i++) {
+        if (data.entity[i].tripUpdate) {
+            const tripUpdate = data.entity[i].tripUpdate;
+            const trip = gtfs.trips[tripUpdate.trip.tripId];
+            if (!trip || !trip.stop_times?.length) {
+                unknownEntityType++
+                continue;
+            }
+            if (tripUpdate.trip.scheduleRelationship != GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.SCHEDULED
+                && tripUpdate.trip.scheduleRelationship != GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED) {
+                    unscheduled++;
+                    continue;
+                }
+            createRandomOfflineSamples(gtfs, trip, tripUpdate, sampleTime, samples);
+            expectedRtCount += handleTrip(gtfs, trip, tripUpdate, sampleTime, samples);            
+        } else {
+            unknownEntityType++;
+        }
+    }
+    console.log('number of unknown, unscheduled entities vs total', unknownEntityType, unscheduled, data.entity.length);
+    return {response: samples, ts: fallbackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: expectedRtCount, err: null};
+}
+
+const extractGtfsrt = async (dir, identifier, source) => {
     const gtfsSource = {
         "sourceid": 0,
-        "matches": "/mnt/lfs/traines-stc/mirror/swiss-gtfs/*/*.zip",
+        "matches": source.gtfsmatches,
         "compression": "unzip",
         "type": "noop"
     }
     identifier += '-gtfs';
-    const gtfsrtFiles = findFiles(dir);
+    const gtfsrtFiles = await findFiles(dir);
+    console.log('Found', gtfsrtFiles.length, 'gtfsrt files');
     const gtfsFilesIterator = await getFilesIterator(gtfsSource);
     
-    let i = 0;
     if (!gtfsCache[identifier]) {
+        gtfsCache[identifier] = {};
         gtfsCache[identifier]['file'] = null;
         gtfsCache[identifier]['validUntil'] = 0;
         gtfsCache[identifier]['data'] = {};
     }
    
+    let i = 0;
     return {
-        next: () => {
+        next: async () => {
             if (i < gtfsrtFiles.length) {
+                console.log('reading', gtfsrtFiles[i]);
                 const buffer = fs.readFileSync(gtfsrtFiles[i]);
+                const fallBackSampleTime = new Date(fs.statSync(gtfsrtFiles[i]).mtimeMs);
                 const data = GtfsRealtimeBindings.transit_realtime.FeedMessage.toObject(GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(buffer));
+                let response;
                 if (data && data.header) {
-                    let mtime = data.header.timestamp ? data.header.timestamp.toNumber() : fs.statSync(next).mtimeMs/1000;
-                    await prepareRelevantGtfs(mtime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFiles[i]);
-                    return assembleResponse(data, gtfsCache[identifier]['data'], mtime);
+                    const sampleTime = data.header.timestamp?.toNumber();
+                    const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFiles[i]);
+                    if (gtfsAvailable) response = await assembleResponse(data, gtfsCache[identifier]['data'], sampleTime, fallBackSampleTime);
+                    else response = {response: null, ts: fallBackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: 0, err: 'gtfsUnavailable'};
+                } else {
+                    response = {response: null, ts: fallBackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: 0, err: 'invalid gtfsrt file'};
                 }
                 i++;
+                return response;
             } else {
                 return null;
             }

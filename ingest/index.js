@@ -32,20 +32,24 @@ const validateResult = (result, ctrs) => {
 }
 
 const formatStation = (station) => {
-    station.station_id = parseInt(station.station_id);
-    if (station.parent) station.parent = parseInt(station.parent);
+    //station.station_id = parseInt(station.station_id);
+    //if (station.parent) station.parent = parseInt(station.parent);
     station.lonlat = '('+station.lon+','+station.lat+')';
     return station;
 }
 
-const formatResponse = (result, hash, source, sampleCount, rtTime) => {
+const formatResponse = (result, hash, source, sampleCount, rtTime, ctrs, lastResponseCtrs) => {
     const typeIds = {
         "journeys": 0,
         "departures": 1,
         "arrivals": 2,
         "trip": 3,
         "refreshJourney": 4,
-        "gtfsrt": 5
+        "gtfsrtTripUpdate": 10
+    }
+    const diffCtrs = {};
+    for (const [key, value] of Object.entries(ctrs)) {
+        diffCtrs[key] = value-lastResponseCtrs[key];
     }
     return {
         hash: hash,
@@ -54,7 +58,8 @@ const formatResponse = (result, hash, source, sampleCount, rtTime) => {
         response_time_estimated: !result.ts,
         sample_time_estimated: !rtTime,
         source: source.sourceid,
-        sample_count: sampleCount
+        sample_count: sampleCount,
+        ctrs: diffCtrs
     };
 }
 
@@ -66,17 +71,19 @@ const formatSample = (sample) => {
     sample.cancelled = !!sample.cancelled;
     if (sample.sample_time) sample.sample_time = new Date(sample.sample_time*1000);
     if (sample.sample_time) sample.ttl_minutes = Math.round(((sample.projected_time || sample.scheduled_time).getTime()-sample.sample_time.getTime())/1000/60);
+    //scheduled_duration
+    //projected_duration
     //sample.trip_id
     //sample.line_name
-    sample.line_fahrtnr = parseInt(sample.line_fahrtnr) || null;
+    //sample.line_fahrtnr = parseInt(sample.line_fahrtnr) || null;
     //sample.product_type_id
     //sample.product_name
-    sample.station_id = parseInt(sample.station_id);
+    //sample.station_id = parseInt(sample.station_id);
     //sample.operator_id
     //sample.is_departure   
     //sample.remarks
     //sample.stop_number    
-    if (sample.destination_provenance_id) sample.destination_provenance_id = parseInt(sample.destination_provenance_id);
+    //if (sample.destination_provenance_id) sample.destination_provenance_id = parseInt(sample.destination_provenance_id);
     //sample.scheduled_platform
     //sample.projected_platform
     //sample.load_factor
@@ -116,33 +123,34 @@ const processSamples = async (target) => {
     for (const source of target.sources) {
         if (source.disabled) continue;
 
-        const identifier = target+'-'+source.sourceid;
-        const it = responseReader(source, identifier, true);
+        const identifier = target.schema+'-'+source.sourceid;
+        const it = await responseReader(source, identifier, true);
 
         let result;
         let rtDiffMin = 1000;
         let rtDiffMax = 0;
-        let rtDiffSum = 0;
-        let rtDiffCount = 0;
         const ctrs = {
             errors: 0,
             unknownTypes: 0,
             typeRadarOrLocation: 0,
             emptyResponses: 0,
-            duplicates: 0,
+            duplicateResponses: 0,
             validResponses: 0,
             samples: 0,
             rtSamples: 0,
             incorrectRtCount: 0,
             missingRts: 0,
             excessRts: 0,
-            persisted: 0,
+            relevantSamples: 0,
+            persistedSamples: 0,
             outside24h: 0,
             outside24hWithRt: 0,
             outside6Months: 0,
+            delayGreater12h: 0,
+            delayLargeNegative: 0,
             missingSampleTime: 0,
             fallbackSampleTime: 0,
-            skipped: 0,
+            skippedSamples: 0,
             sampleDuplicates: 0,
             remarks: 0,
             cancelled: 0,
@@ -151,16 +159,24 @@ const processSamples = async (target) => {
             perf_parse: 0,
             perf_persist: 0,
             perf_ctr: 0,
+            rtDiffSum: 0,
+            rtDiffCount: 0
         }
         let perf_start = performance.now();
         let continueWithNextFile = true;
         while ((result = await it.next(continueWithNextFile))) {
+            const lastResponseCtrs = JSON.parse(JSON.stringify(ctrs));
             ctrs.perf_read += performance.now()-perf_start;
             ctrs.perf_ctr++;
             
             if (!validateResult(result, ctrs)) {
+                if (result.err == 'gtfsUnavailable') {
+                    errorOccurred = true;
+                    break;
+                }
                 continue;
             }
+            console.log('validated');
             
             perf_start = performance.now();
             const str = JSON.stringify(result.response);
@@ -169,7 +185,7 @@ const processSamples = async (target) => {
             perf_start = performance.now();
 
             if (responseHashes[hash]) {
-                ctrs.duplicates++;
+                ctrs.duplicateResponses++;
                 continue;
             }
             responseHashes[hash] = true;
@@ -180,6 +196,7 @@ const processSamples = async (target) => {
 
             ctrs.samples += samples.length;
             ctrs.rtSamples += actualCount;
+            console.log('samples', samples.length);
            
             if (result.expectedRtCount != actualCount) {
                 ctrs.incorrectRtCount++;
@@ -188,16 +205,19 @@ const processSamples = async (target) => {
                 if (d < 0) ctrs.excessRts -= d
                 //console.log('incorrectRtCount:', result.expectedRtCount, actualCount, samples.length, result.type);//, JSON.stringify(result.response), extracted);
             }
+            if (samples.length == 0) {
+                ctrs.emptyResponses++;
+            }
             //console.log(extracted);
             //break;
 
-            const rtTime = result.response?.realtimeDataFrom || result.response?.realtimeDataUpdatedAt;
+            const rtTime = samples.length > 0 ? samples[samples.length-1].sample_time : null;
             if (rtTime) {
-                rtDiffCount++;
+                ctrs.rtDiffCount++;
                 const diff = result.ts?.getTime()/1000-rtTime;
                 if (diff < rtDiffMin) rtDiffMin = diff;
                 if (diff > rtDiffMax) rtDiffMax = diff;
-                rtDiffSum += diff;
+                ctrs.rtDiffSum += diff;
             }
 
             let relevantStations = {};
@@ -218,19 +238,23 @@ const processSamples = async (target) => {
                     continue;
                 }
                 sampleHashes[sampleHash] = true;
-                if (sample.sample_time) {
-                    if (!firstSampleTime) firstSampleTime = sample.sample_time;
-                    else if (target.sources.length > 1 && sample.sample_time-firstSampleTime > 24*60*60) continueWithNextFile = false;
-                }
+                
+                if (!firstSampleTime) firstSampleTime = sample.sample_time;
+                else if (sample.sample_time-firstSampleTime > 24*60*60) continueWithNextFile = false;
                 
                 sample = formatSample(sample);
                 if (Math.abs(sample.ttl_minutes) > 24*60) {
                     ctrs.outside24h++;
-                    if (result.delay_minutes != null) ctrs.outside24hWithRt++;
+                    if (sample.delay_minutes != null) ctrs.outside24hWithRt++;
                     if (Math.abs(sample.ttl_minutes) > 6*30*24*60) {
                         ctrs.outside6Months++;
                     }
                     continue;
+                }
+                if (sample.delay_minutes > 12*60) {
+                    ctrs.delayGreater12h++;
+                } else if (sample.delay_minutes < -30) {
+                    ctrs.delayLargeNegative++;
                 }
                 
                 if (sample.cancelled) ctrs.cancelled++;
@@ -271,8 +295,9 @@ const processSamples = async (target) => {
                 if (relevantRemarksList.length > 0) {
                     await db.upsertRemarks(target.schema, relevantRemarksList);
                 }
+                ctrs.relevantSamples += relevantSamples.length;
                 if (relevantSamples.length > 0) {
-                    const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime));
+                    const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime, ctrs, lastResponseCtrs));
                     for (let sample of relevantSamples) {
                         sample.response_id = responseId;
                         sample.operator_id = foreignFields.operator.existing[sample.operator?.id];
@@ -283,8 +308,7 @@ const processSamples = async (target) => {
                     await db.insertSamples(target.schema, relevantSamples);
                 }
                 await db.commit();
-
-                ctrs.persisted += relevantSamples.length;
+                ctrs.persistedSamples += relevantSamples.length;            
             } catch (err) {
                 await db.rollback();
                 if (err.table != 'response_log' || err.constraint != 'hash') {
@@ -294,13 +318,13 @@ const processSamples = async (target) => {
                     break;
                 } else {
                     console.log('Skipping response already stored.');
-                    ctrs.skipped += relevantSamples.length;
+                    ctrs.skippedSamples += relevantSamples.length;
                 }
             }
                 
             ctrs.perf_persist += performance.now()-perf_start;
             perf_start = performance.now();
-            if (ctrs.validResponses % 10000 == 0) {
+            if (ctrs.validResponses % 1000 == 0) {
                 console.log('counters:', ctrs, new Date());
                 console.log('perf', ctrs.perf_read/ctrs.perf_ctr, ctrs.perf_parse/ctrs.perf_ctr, ctrs.perf_persist/ctrs.perf_ctr);
                 ctrs.perf_read = 0;
@@ -313,18 +337,27 @@ const processSamples = async (target) => {
         }
 
         console.log('counters:', ctrs, new Date());
-        console.log('rtDiff minmaxavg', rtDiffMin, rtDiffMax, rtDiffSum/rtDiffCount);
+        console.log('rtDiff minmaxavg', rtDiffMin, rtDiffMax, ctrs.rtDiffSum/ctrs.rtDiffCount);
         if (errorOccurred) {
             console.log('TERMINATING due to error.');
             break;
         }
     }
+    if (!errorOccurred) {
+        //await db.updateMaterializedHistograms(target.schema);
+    }
+    return !errorOccurred && firstSampleTime;
 }
 
-
-for (const target of conf.targets) {
-    if (target.disabled) continue;
-    await processSamples(target);
+console.log("===========");
+console.log("Starting...");
+console.log("===========");
+let shallContinue = true;
+while (shallContinue) {
+    for (const target of conf.targets) {
+        if (target.disabled) continue;
+        shallContinue = await processSamples(target) && shallContinue;
+    }
 }
 
 db.disconnect();

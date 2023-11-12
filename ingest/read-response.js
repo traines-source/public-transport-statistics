@@ -1,12 +1,12 @@
-import glob from 'glob'
-import fs from 'fs'
+import glob from 'glob';
+import fs from 'fs';
 
 import {exec} from 'child_process';
 
-import {extractHafas} from './extract-hafas.js'
-import {extractFptf} from './extract-fptf.js'
+import {extractHafas} from './extract-hafas.js';
+import {extractFptf} from './extract-fptf.js';
 import {extractGtfsrt} from './extract-gtfsrt.js';
-import {conf} from './read-conf.js'
+import {conf} from './read-conf.js';
 
 const findFiles = (source) => {
     return new Promise((done, failed) => {
@@ -45,8 +45,8 @@ const fileReader = {
     'noop': (uncompressedFile, identifier) => uncompressedFile
 }
 
-const decompressFile = (cmdToStdout, file, sourceid, slot) => {
-    const uncompressedFile = conf.working_dir+sourceid+'.'+slot+'.uncompressed';
+const decompressFile = (cmdToStdout, file, identifier, slot) => {
+    const uncompressedFile = conf.working_dir+identifier+'.'+slot+'.uncompressed';
     return new Promise((done, failed) => {
         exec(cmdToStdout+file+" > "+uncompressedFile, (err, stdout, stderr) => {
             if (err) {
@@ -59,10 +59,11 @@ const decompressFile = (cmdToStdout, file, sourceid, slot) => {
     });
 }
 
-const decompressFolder = (cmd, dirflag, file, sourceid, slot) => {
-    const uncompressedDir = conf.working_dir+sourceid+'.'+slot+'.uncompressed/';
+const decompressFolder = (cmd, dirflag, file, identifier, slot) => {
+    const uncompressedDir = conf.working_dir+identifier+'.'+slot+'.uncompressed/';
     return new Promise((done, failed) => {
         fs.rmSync(uncompressedDir, { recursive: true, force: true });
+        fs.mkdirSync(uncompressedDir);
         exec(cmd+file+dirflag+uncompressedDir, (err, stdout, stderr) => {
             if (err) {
                 err.stderr = stderr;
@@ -75,11 +76,11 @@ const decompressFolder = (cmd, dirflag, file, sourceid, slot) => {
 }
 
 const fileLoader = {
-    'bz2-bulks': (file, sourceid, slot) => decompressFile("bzip2 -k -d -c ", file, sourceid, slot),
-    'bz2-tar': (file, sourceid, slot) => decompressFolder("tar -xjf ", " -C " , file, sourceid, slot),
-    'unzip': (file, sourceid, slot) => decompressFolder("unzip ", " -d " , file, sourceid, slot),
-    'gzip-bulks': (file, sourceid, slot) => decompressFile("gzip -k -d -c ", file, sourceid, slot),
-    'gzip-single': (file, sourceid, slot) => Promise.resolve({uncompressed: file, file: file})
+    'bz2-bulks': (file, identifier, slot) => decompressFile("bzip2 -k -d -c ", file, identifier, slot),
+    'bz2-tar': (file, identifier, slot) => decompressFolder("tar -xjf ", " -C " , file, identifier, slot),
+    'unzip': (file, identifier, slot) => decompressFolder("unzip ", " -d " , file, identifier, slot),
+    'gzip-bulks': (file, identifier, slot) => decompressFile("gzip -k -d -c ", file, identifier, slot),
+    'gzip-single': (file, identifier, slot) => Promise.resolve({uncompressed: file, file: file})
 }
 
 const updateLastSuccessful = (lastFile, identifier, update) => {
@@ -108,24 +109,24 @@ const findAndOpenNextFile = async (source, identifier, filesIterator, lastSucces
     console.log(file);
     if (!file) return {file: null, fileReader: null};    
     if (!uncompressing.file) {
-        uncompressing.file = fileLoader[source.compression](file, source.sourceid, uncompressing.slot);
+        uncompressing.file = fileLoader[source.compression](file, identifier, uncompressing.slot);
     }
     let loadedFile = await uncompressing.file;
     if (loadedFile.file != file) {
         console.log('TERMINATING. Uncompressed file does not match expected file', loadedFile.file, file);
         return {file: null, fileReader: null};
     }
-    console.log('File', file, ' loaded.');
+    console.log('File', file, ' loaded.', loadedFile);
     let nextFile = filesIterator.next(file);
     if (nextFile) {    
         console.log('Preloading file', nextFile);
         uncompressing.slot = uncompressing.slot == 'slot0' ? 'slot1' : 'slot0';
-        uncompressing.file = fileLoader[source.compression](nextFile, source.sourceid, uncompressing.slot);
+        uncompressing.file = fileLoader[source.compression](nextFile, identifier, uncompressing.slot);
     }
-    return {file: file, fileReader: fileReader[source.type](loadedFile.uncompressed, identifier)};
+    return {file: file, fileReader: await fileReader[source.type](loadedFile.uncompressed, identifier, source)};
 }
 
-const responseReader = (source, identifier, update) => {
+const responseReader = async (source, identifier, update) => {
     let iterator;
     let filesIterator = await getFilesIterator(source);
     let lastFile;
@@ -134,7 +135,7 @@ const responseReader = (source, identifier, update) => {
         next: (continueWithNextFile) => {
             return new Promise((done, failed) => {
                 const renewIterator = () => {
-                    console.log(i);
+                    console.log('file', i);
                     const lastSuccessful = updateLastSuccessful(lastFile, source, identifier, update);
                     if (!continueWithNextFile) {
                         console.log('Stopping loading next file.');

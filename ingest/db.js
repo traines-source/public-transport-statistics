@@ -80,17 +80,21 @@ const upsertRemarks = async (schema, o) => {
 }
 
 const insertResponse = async (schema, response) => {
-    const fmt = insertFormat(['hash', 'type', 'response_time', 'response_time_estimated', 'sample_time_estimated', 'source', 'sample_count'], [response]);
+    const fmt = insertFormat(['hash', 'type', 'response_time', 'response_time_estimated', 'sample_time_estimated', 'source', 'sample_count', 'ctrs'], [response]);
     const r = await pgc.query('INSERT INTO '+schema+'.response_log ('+fmt.cols+') VALUES '+fmt.format+' RETURNING response_id', fmt.values);
     return r.rows[0].response_id;
 }
 
 const insertSamples = async (schema, samples) => {
     const fmt = insertFormatArray(
-        {'scheduled_time':'timestamptz', 'projected_time':'timestamptz', 'delay_minutes':'smallint', 'cancelled':'boolean', 'sample_time':'timestamptz', 'ttl_minutes':'smallint', 'trip_id':'text', 'line_name':'text', 'line_fahrtnr':'int', 'product_type_id':'smallint', 'product_name':'text', 'station_id':'int', 'operator_id':'smallint', 'is_departure':'boolean', 'remarks_hash':'uuid', 'destination_provenance_id':'int', 'scheduled_platform':'text', 'projected_platform':'text', 'load_factor_id':'smallint', 'prognosis_type_id':'smallint', 'response_id':'int'},
+        {'scheduled_time':'timestamptz', 'projected_time':'timestamptz', 'scheduled_duration_minutes':'smallint', 'projected_duration_minutes':'smallint', 'delay_minutes':'smallint', 'cancelled':'boolean', 'sample_time':'timestamptz', 'ttl_minutes':'smallint', 'trip_id':'text', 'line_name':'text', 'line_fahrtnr':'text', 'product_type_id':'smallint', 'product_name':'text', 'station_id':'text', 'operator_id':'smallint', 'is_departure':'boolean', 'remarks_hash':'uuid', 'destination_provenance_id':'text', 'scheduled_platform':'text', 'projected_platform':'text', 'load_factor_id':'smallint', 'prognosis_type_id':'smallint', 'response_id':'int'},
         samples
     );
     await pgc.query('INSERT INTO '+schema+'.sample ('+fmt.cols+') SELECT * FROM UNNEST '+fmt.format, fmt.values);
+}
+
+const updateMaterializedHistograms = async (schema) => {
+    await pgc.query('CALL '+schema+'.refresh_histograms_and_cleanup_samples()');   
 }
 
 const insertFormatArray = (columns, array) => {
@@ -153,6 +157,7 @@ export default {
     upsertRemarks,
     insertResponse,
     insertSamples,
+    updateMaterializedHistograms,
     begin,
     commit,
     rollback,

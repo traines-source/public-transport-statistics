@@ -175,21 +175,23 @@ CREATE TABLE db.sample (
     id bigint NOT NULL,
     scheduled_time timestamp with time zone NOT NULL,
     projected_time timestamp with time zone,
+    scheduled_duration_minutes smallint,
+    projected_duration_minutes smallint,
     delay_minutes smallint,
     cancelled boolean NOT NULL,
     sample_time timestamp with time zone NOT NULL,
     ttl_minutes smallint NOT NULL,
     trip_id text NOT NULL,
     line_name text,
-    line_fahrtnr integer,
+    line_fahrtnr text,
     product_type_id smallint,
     product_name text,
-    station_id integer NOT NULL,
+    station_id text NOT NULL,
     operator_id smallint,
     is_departure boolean NOT NULL,
     remarks_hash uuid,
     stop_number smallint,
-    destination_provenance_id integer,
+    destination_provenance_id text,
     scheduled_platform text,
     projected_platform text,
     load_factor_id smallint,
@@ -564,7 +566,8 @@ CREATE TABLE db.response_log (
     source smallint NOT NULL,
     sample_count integer NOT NULL,
     response_time_estimated boolean NOT NULL,
-    sample_time_estimated boolean NOT NULL
+    sample_time_estimated boolean NOT NULL,
+    ctrs jsonb NOT NULL
 );
 
 
@@ -593,110 +596,6 @@ ALTER SEQUENCE db.response_log_response_id_seq OWNED BY db.response_log.response
 
 
 --
--- Name: sample_histogram; Type: MATERIALIZED VIEW; Schema: db; Owner: public-transport-stats
---
-
-CREATE MATERIALIZED VIEW db.sample_histogram AS
- SELECT r.scheduled_time,
-    (date_part('year'::text, r.scheduled_time))::smallint AS year,
-    (date_part('month'::text, r.scheduled_time))::smallint AS month,
-    (date_part('day'::text, r.scheduled_time))::smallint AS day,
-    (date_part('dow'::text, r.scheduled_time))::smallint AS day_of_week,
-    (date_part('hour'::text, r.scheduled_time))::smallint AS hour,
-    r.product_type_id,
-    r.station_id,
-    r.operator_id,
-    r.is_departure,
-    r.prior_ttl_bucket,
-    r.prior_delay_bucket,
-    r.latest_sample_ttl_bucket,
-    r.latest_sample_delay_bucket,
-    r.sample_count,
-    sum(r.sample_count) OVER (PARTITION BY r.scheduled_time, r.product_type_id, r.station_id, r.is_departure, r.prior_delay_bucket, r.prior_ttl_bucket, r.latest_sample_ttl_bucket) AS total_sample_count
-   FROM ( SELECT date_trunc('hour'::text, s.scheduled_time) AS scheduled_time,
-            s.product_type_id,
-            s.station_id,
-            s.operator_id,
-            s.is_departure,
-                CASE
-                    WHEN (latest_sample.id = s.id) THEN NULL::int4range
-                    ELSE db.ttl_bucket_range(s.ttl_minutes)
-                END AS prior_ttl_bucket,
-                CASE
-                    WHEN (latest_sample.id = s.id) THEN NULL::int4range
-                    ELSE db.delay_bucket_range(s.delay_minutes)
-                END AS prior_delay_bucket,
-            db.ttl_bucket_range(latest_sample.ttl_minutes) AS latest_sample_ttl_bucket,
-                CASE
-                    WHEN (latest_sample.cancelled_with_substitute = true) THEN '(,)'::int4range
-                    WHEN ((latest_sample.id = s.id) OR (s.delay_minutes IS NULL)) THEN db.delay_bucket_range(latest_sample.delay_minutes)
-                    ELSE db.delay_bucket_range((latest_sample.delay_minutes - s.delay_minutes))
-                END AS latest_sample_delay_bucket,
-            count(*) AS sample_count
-           FROM (db.sample s
-             JOIN db.latest_sample ON (((s.trip_id = latest_sample.trip_id) AND (s.scheduled_time = latest_sample.scheduled_time) AND (s.station_id = latest_sample.station_id) AND (s.is_departure = latest_sample.is_departure))))
-          WHERE ((NOT s.cancelled) OR (latest_sample.id = s.id))
-          GROUP BY (date_trunc('hour'::text, s.scheduled_time)), s.product_type_id, s.station_id, s.operator_id, s.is_departure,
-                CASE
-                    WHEN (latest_sample.id = s.id) THEN NULL::int4range
-                    ELSE db.delay_bucket_range(s.delay_minutes)
-                END,
-                CASE
-                    WHEN (latest_sample.id = s.id) THEN NULL::int4range
-                    ELSE db.ttl_bucket_range(s.ttl_minutes)
-                END,
-                CASE
-                    WHEN (latest_sample.cancelled_with_substitute = true) THEN '(,)'::int4range
-                    WHEN ((latest_sample.id = s.id) OR (s.delay_minutes IS NULL)) THEN db.delay_bucket_range(latest_sample.delay_minutes)
-                    ELSE db.delay_bucket_range((latest_sample.delay_minutes - s.delay_minutes))
-                END, (db.ttl_bucket_range(latest_sample.ttl_minutes))) r
-  WITH NO DATA;
-
-
-ALTER TABLE db.sample_histogram OWNER TO "public-transport-stats";
-
---
--- Name: sample_histogram_by_month; Type: MATERIALIZED VIEW; Schema: db; Owner: postgres
---
-
-CREATE MATERIALIZED VIEW db.sample_histogram_by_month AS
- SELECT sample_histogram.year,
-    sample_histogram.month,
-    sample_histogram.operator_id,
-    sample_histogram.is_departure,
-    sample_histogram.prior_ttl_bucket,
-    sample_histogram.prior_delay_bucket,
-    sample_histogram.latest_sample_ttl_bucket,
-    sample_histogram.latest_sample_delay_bucket,
-    sum(sample_histogram.sample_count) AS sample_count
-   FROM db.sample_histogram
-  GROUP BY sample_histogram.year, sample_histogram.month, sample_histogram.product_type_id, sample_histogram.operator_id, sample_histogram.is_departure, sample_histogram.prior_delay_bucket, sample_histogram.prior_ttl_bucket, sample_histogram.latest_sample_delay_bucket, sample_histogram.latest_sample_ttl_bucket
-  WITH NO DATA;
-
-
-ALTER TABLE db.sample_histogram_by_month OWNER TO postgres;
-
---
--- Name: sample_histogram_without_time; Type: MATERIALIZED VIEW; Schema: db; Owner: public-transport-stats
---
-
-CREATE MATERIALIZED VIEW db.sample_histogram_without_time AS
- SELECT sample_histogram.product_type_id,
-    sample_histogram.operator_id,
-    sample_histogram.is_departure,
-    sample_histogram.prior_ttl_bucket,
-    sample_histogram.prior_delay_bucket,
-    sample_histogram.latest_sample_ttl_bucket,
-    sample_histogram.latest_sample_delay_bucket,
-    sum(sample_histogram.sample_count) AS sample_count
-   FROM db.sample_histogram
-  GROUP BY sample_histogram.product_type_id, sample_histogram.operator_id, sample_histogram.is_departure, sample_histogram.prior_delay_bucket, sample_histogram.prior_ttl_bucket, sample_histogram.latest_sample_delay_bucket, sample_histogram.latest_sample_ttl_bucket
-  WITH NO DATA;
-
-
-ALTER TABLE db.sample_histogram_without_time OWNER TO "public-transport-stats";
-
---
 -- Name: sample_id_seq; Type: SEQUENCE; Schema: db; Owner: public-transport-stats
 --
 
@@ -722,10 +621,10 @@ ALTER SEQUENCE db.sample_id_seq OWNED BY db.sample.id;
 --
 
 CREATE TABLE db.station (
-    station_id integer NOT NULL,
+    station_id text NOT NULL,
     lonlat point NOT NULL,
     name text NOT NULL,
-    parent integer,
+    parent text,
     details jsonb
 );
 
@@ -1055,27 +954,6 @@ GRANT SELECT ON SEQUENCE db.prognosis_type_prognosis_type_id_seq TO "public-tran
 --
 
 GRANT SELECT ON TABLE db.response_log TO "public-transport-stats-read";
-
-
---
--- Name: TABLE sample_histogram; Type: ACL; Schema: db; Owner: public-transport-stats
---
-
-GRANT SELECT ON TABLE db.sample_histogram TO "public-transport-stats-read";
-
-
---
--- Name: TABLE sample_histogram_by_month; Type: ACL; Schema: db; Owner: postgres
---
-
-GRANT SELECT ON TABLE db.sample_histogram_by_month TO "public-transport-stats-read";
-
-
---
--- Name: TABLE sample_histogram_without_time; Type: ACL; Schema: db; Owner: public-transport-stats
---
-
-GRANT SELECT ON TABLE db.sample_histogram_without_time TO "public-transport-stats-read";
 
 
 --

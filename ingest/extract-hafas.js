@@ -1,10 +1,9 @@
-import nReadlines from 'n-readlines'
+import nReadlines from 'n-readlines';
 
-
-import {createClient} from 'hafas-client'
-import {defaultProfile} from 'hafas-client/lib/default-profile.js'
-import {checkIfResponseIsOk} from 'hafas-client/lib/request.js'
-import {profile as dbProfile} from 'hafas-client/p/db/index.js'
+import {createClient} from 'hafas-client';
+import {defaultProfile} from 'hafas-client/lib/default-profile.js';
+import {checkIfResponseIsOk} from 'hafas-client/lib/request.js';
+import {profile as dbProfile} from 'hafas-client/p/db/index.js';
 
 
 const dummyStation = '8011160';
@@ -63,7 +62,7 @@ const unmarshalHafasResponse = (line) => {
     return null;
 }
 
-const extractHafas = (file) => {
+const extractHafas = async (file) => {
     const lines = new nReadlines(file);
     return {
         next: () => {                

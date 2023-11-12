@@ -206,7 +206,8 @@ const transformSamples = {
     'departures': (departures) => parseAlternatives(Array.isArray(departures) ? departures : departures.departures, true, parseRt(departures)),
     'arrivals': (arrivals) => parseAlternatives(Array.isArray(arrivals) ? arrivals : arrivals.arrivals, false, parseRt(arrivals)),
     'trip': (trip) => parseTrip(trip.trip, parseRt(trip)),
-    'refreshJourney': (journey) => parseJourneys([journey.journey], parseRt(journey))
+    'refreshJourney': (journey) => parseJourneys([journey.journey], parseRt(journey)),
+    'gtfsrtTripUpdate': (gtfsrt) => gtfsrt
 }
 
 export {
