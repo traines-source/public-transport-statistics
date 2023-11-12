@@ -33,6 +33,20 @@ const getFilesIterator = async (source) => {
                     return files[i+1];
                 }
             }
+            if (source.restartWhenLastSuccessfullNotMatching) return files[0];
+            return null;
+        }
+    }
+}
+
+const callOnce = (uncompressedFile, identifier) => {
+    let calledOnce = false;
+    return {
+        next: async () => {
+            if (!calledOnce) {
+                calledOnce = true;
+                return uncompressedFile;
+            }
             return null;
         }
     }
@@ -42,7 +56,8 @@ const fileReader = {
     'hafas': extractHafas,
     'fptf': extractFptf,
     'gtfsrt': extractGtfsrt,
-    'noop': (uncompressedFile, identifier) => uncompressedFile
+    'noop': (uncompressedFile, identifier) => uncompressedFile,
+    'callonce': callOnce
 }
 
 const decompressFile = (cmdToStdout, file, identifier, slot) => {
@@ -62,6 +77,8 @@ const decompressFile = (cmdToStdout, file, identifier, slot) => {
 const decompressFolder = (cmd, dirflag, file, identifier, slot) => {
     const uncompressedDir = conf.working_dir+identifier+'.'+slot+'.uncompressed/';
     return new Promise((done, failed) => {
+        done({uncompressed: uncompressedDir, file: file});
+        return;
         fs.rmSync(uncompressedDir, { recursive: true, force: true });
         fs.mkdirSync(uncompressedDir);
         exec(cmd+file+dirflag+uncompressedDir, (err, stdout, stderr) => {
@@ -80,7 +97,8 @@ const fileLoader = {
     'bz2-tar': (file, identifier, slot) => decompressFolder("tar -xjf ", " -C " , file, identifier, slot),
     'unzip': (file, identifier, slot) => decompressFolder("unzip ", " -d " , file, identifier, slot),
     'gzip-bulks': (file, identifier, slot) => decompressFile("gzip -k -d -c ", file, identifier, slot),
-    'gzip-single': (file, identifier, slot) => Promise.resolve({uncompressed: file, file: file})
+    'gzip-single': (file, identifier, slot) => Promise.resolve({uncompressed: file, file: file}),
+    'none': (file, identifier, slot) => Promise.resolve({uncompressed: file, file: file})
 }
 
 const updateLastSuccessful = (lastFile, identifier, update) => {
@@ -136,7 +154,7 @@ const responseReader = async (source, identifier, update) => {
             return new Promise((done, failed) => {
                 const renewIterator = () => {
                     console.log('file', i);
-                    const lastSuccessful = updateLastSuccessful(lastFile, source, identifier, update);
+                    const lastSuccessful = updateLastSuccessful(lastFile, identifier, update);
                     if (!continueWithNextFile) {
                         console.log('Stopping loading next file.');
                         done(null);

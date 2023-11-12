@@ -1,5 +1,6 @@
 import nReadlines from 'n-readlines';
 import gzip from 'node-gzip';
+import md5 from 'md5'
 import {parse} from 'date-fns';
 
 const logEntryDetector = Buffer.from('[').readUint8(0);
@@ -28,16 +29,18 @@ const assembleResponse = async (readLines) => {
     let response;
     let expectedCount;
     let err;
+    let hash;
     try {
         const raw = await gzip.ungzip(Buffer.concat(concatLines));
         const raw_utf8 = raw.toString('utf-8');
         expectedCount = (raw_utf8.match(/elay": \d+/g) || []).length;
         response = JSON.parse(raw_utf8);
+        hash = md5(raw_utf8);
     } catch(e) {
         console.log(e)
         err = e;
     }
-    return {response: response, ts: meta?.ts, type: meta?.type, expectedRtCount: expectedCount, err: err};
+    return {response: response, hash: hash, ts: meta?.ts, type: meta?.type, expectedRtCount: expectedCount, err: err};
 }
 
 const isNewEntry = (line) => {

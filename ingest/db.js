@@ -67,9 +67,12 @@ const getKvMap = async (schema, table, key, value) => {
 }
 
 const upsertStations = async (schema, o, detailsOnlyIfNull) => {
-    const fmt = insertFormat(['station_id', 'lonlat', 'name', 'parent', 'details'], o);
+    const fmt = insertFormatArray(
+        {'station_id':'text', 'lonlat':'point', 'name':'text', 'parent':'text', 'details':'jsonb'},
+        o
+    );
     await pgc.query(
-        'INSERT INTO '+schema+'.station AS s ('+fmt.cols+') VALUES '+fmt.format
+        'INSERT INTO '+schema+'.station AS s ('+fmt.cols+') SELECT * FROM UNNEST '+fmt.format
         +' ON CONFLICT (station_id) DO UPDATE SET details = EXCLUDED.details' + (detailsOnlyIfNull ? ' WHERE s.details IS NULL' : '')
         , fmt.values);   
 }
@@ -86,11 +89,14 @@ const insertResponse = async (schema, response) => {
 }
 
 const insertSamples = async (schema, samples) => {
+    console.log('preparing samples');
     const fmt = insertFormatArray(
         {'scheduled_time':'timestamptz', 'projected_time':'timestamptz', 'scheduled_duration_minutes':'smallint', 'projected_duration_minutes':'smallint', 'delay_minutes':'smallint', 'cancelled':'boolean', 'sample_time':'timestamptz', 'ttl_minutes':'smallint', 'trip_id':'text', 'line_name':'text', 'line_fahrtnr':'text', 'product_type_id':'smallint', 'product_name':'text', 'station_id':'text', 'operator_id':'smallint', 'is_departure':'boolean', 'remarks_hash':'uuid', 'destination_provenance_id':'text', 'scheduled_platform':'text', 'projected_platform':'text', 'load_factor_id':'smallint', 'prognosis_type_id':'smallint', 'response_id':'int'},
         samples
     );
+    console.log('sending query');
     await pgc.query('INSERT INTO '+schema+'.sample ('+fmt.cols+') SELECT * FROM UNNEST '+fmt.format, fmt.values);
+    console.log('query sent');
 }
 
 const updateMaterializedHistograms = async (schema) => {

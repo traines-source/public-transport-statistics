@@ -38,7 +38,7 @@ const formatStation = (station) => {
     return station;
 }
 
-const formatResponse = (result, hash, source, sampleCount, rtTime, ctrs, lastResponseCtrs) => {
+const formatResponse = (result, source, sampleCount, rtTime, ctrs, lastResponseCtrs) => {
     const typeIds = {
         "journeys": 0,
         "departures": 1,
@@ -52,7 +52,7 @@ const formatResponse = (result, hash, source, sampleCount, rtTime, ctrs, lastRes
         diffCtrs[key] = value-lastResponseCtrs[key];
     }
     return {
-        hash: hash,
+        hash: result.hash,
         type: typeIds[result.type],
         response_time: result.ts || (rtTime ? new Date((rtTime+fallbackRtDiff)*1000): null),
         response_time_estimated: !result.ts,
@@ -167,6 +167,7 @@ const processSamples = async (target) => {
         while ((result = await it.next(continueWithNextFile))) {
             const lastResponseCtrs = JSON.parse(JSON.stringify(ctrs));
             ctrs.perf_read += performance.now()-perf_start;
+            perf_start = performance.now();
             ctrs.perf_ctr++;
             
             if (!validateResult(result, ctrs)) {
@@ -177,18 +178,12 @@ const processSamples = async (target) => {
                 continue;
             }
             console.log('validated');
-            
-            perf_start = performance.now();
-            const str = JSON.stringify(result.response);
-            ctrs.perf_stringify += performance.now()-perf_start;
-            const hash = md5(str);
-            perf_start = performance.now();
 
-            if (responseHashes[hash]) {
+            if (responseHashes[result.hash]) {
                 ctrs.duplicateResponses++;
                 continue;
             }
-            responseHashes[hash] = true;
+            responseHashes[result.hash] = true;
             ctrs.validResponses++;
 
             const samples = transformSamples[result.type](result.response);
@@ -196,8 +191,9 @@ const processSamples = async (target) => {
 
             ctrs.samples += samples.length;
             ctrs.rtSamples += actualCount;
-            console.log('samples', samples.length);
-           
+            console.log('samples', samples.length, performance.now()-perf_start);
+            perf_start = performance.now();
+
             if (result.expectedRtCount != actualCount) {
                 ctrs.incorrectRtCount++;
                 const d = result.expectedRtCount - actualCount;
@@ -208,8 +204,6 @@ const processSamples = async (target) => {
             if (samples.length == 0) {
                 ctrs.emptyResponses++;
             }
-            //console.log(extracted);
-            //break;
 
             const rtTime = samples.length > 0 ? samples[samples.length-1].sample_time : null;
             if (rtTime) {
@@ -223,6 +217,8 @@ const processSamples = async (target) => {
             let relevantStations = {};
             let relevantRemarks = {};
             let relevantSamples = [];
+            console.log('before iteration', performance.now()-perf_start);
+            perf_start = performance.now();
             for (let sample of samples) {
                 if (!sample.sample_time) {
                     sample.sample_time = result.ts?.getTime()/1000-fallbackRtDiff;
@@ -232,12 +228,14 @@ const processSamples = async (target) => {
                     ctrs.missingSampleTime++;
                     continue;
                 }
-                const sampleHash = md5(JSON.stringify(sample));
-                if (sampleHashes[sampleHash]) {
-                    ctrs.sampleDuplicates++;
-                    continue;
+                if (!source.allowDuplicateSamples) {
+                    const sampleHash = md5(JSON.stringify(sample));
+                    if (sampleHashes[sampleHash]) {
+                        ctrs.sampleDuplicates++;
+                        continue;
+                    }
+                    sampleHashes[sampleHash] = true;
                 }
-                sampleHashes[sampleHash] = true;
                 
                 if (!firstSampleTime) firstSampleTime = sample.sample_time;
                 else if (sample.sample_time-firstSampleTime > 24*60*60) continueWithNextFile = false;
@@ -267,7 +265,9 @@ const processSamples = async (target) => {
                 } 
 
                 for (let station of sample.stations) {
-                    relevantStations[station.station_id] = formatStation(station);
+                    if (!relevantStations[station.station_id]) {
+                        relevantStations[station.station_id] = formatStation(station);
+                    }
                 }
                               
                 relevantSamples.push(sample);                
@@ -279,8 +279,8 @@ const processSamples = async (target) => {
             }
 
             ctrs.perf_parse += performance.now()-perf_start;
+            console.log('start commit', performance.now()-perf_start);
             perf_start = performance.now();
-            
             try {
                 await db.begin();
                 await insertMissing(foreignFields.operator, db.insertOperators, target.schema);
@@ -289,6 +289,7 @@ const processSamples = async (target) => {
                 await insertMissing(foreignFields.prognosis_type, db.insertPrognosisTypes, target.schema);
                 const relevantStationList = Object.values(relevantStations);
                 if (relevantStationList.length > 0) {
+                    console.log('upserting stations', relevantStationList.length);
                     await db.upsertStations(target.schema, relevantStationList);
                 }
                 const relevantRemarksList = Object.values(relevantRemarks);
@@ -297,7 +298,9 @@ const processSamples = async (target) => {
                 }
                 ctrs.relevantSamples += relevantSamples.length;
                 if (relevantSamples.length > 0) {
-                    const responseId = await db.insertResponse(target.schema, formatResponse(result, hash, source, samples.length, rtTime, ctrs, lastResponseCtrs));
+                    const responseId = await db.insertResponse(target.schema, formatResponse(result, source, samples.length, rtTime, ctrs, lastResponseCtrs));
+                    console.log('retrofitting samples', performance.now()-perf_start);
+                    perf_start = performance.now();
                     for (let sample of relevantSamples) {
                         sample.response_id = responseId;
                         sample.operator_id = foreignFields.operator.existing[sample.operator?.id];
@@ -305,8 +308,12 @@ const processSamples = async (target) => {
                         sample.product_type_id = foreignFields.product_type.existing[sample.product_type];
                         sample.prognosis_type_id = foreignFields.prognosis_type.existing[sample.prognosis_type];
                     }
+                    console.log('inserting samples', performance.now()-perf_start);
+                    perf_start = performance.now();
                     await db.insertSamples(target.schema, relevantSamples);
                 }
+                console.log('commiting now', performance.now()-perf_start);
+                perf_start = performance.now();
                 await db.commit();
                 ctrs.persistedSamples += relevantSamples.length;            
             } catch (err) {
@@ -321,6 +328,8 @@ const processSamples = async (target) => {
                     ctrs.skippedSamples += relevantSamples.length;
                 }
             }
+            console.log('end commit', performance.now()-perf_start);
+            perf_start = performance.now();
                 
             ctrs.perf_persist += performance.now()-perf_start;
             perf_start = performance.now();

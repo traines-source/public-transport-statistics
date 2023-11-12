@@ -1,23 +1,11 @@
 import csv from 'csv-parser';
 import stripBomStream from 'strip-bom-stream';
-import glob from 'glob';
+import md5 from 'md5'
 import fs from 'fs';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
-import {findAndOpenNextFile, getFilesIterator} from './read-response.js';
+import {findAndOpenNextFile, getFilesIterator, responseReader} from './read-response.js';
 
 const randomOfflineSamplesNumber = 3;
-
-const findFiles = (dir) => {
-    return new Promise((done, failed) => {
-        glob(dir+'*/*.gtfsrt', {}, function (er, files) {
-            if (er) {
-                failed(er);
-                return;
-            }
-            done(files);
-        });
-    });
-}
 
 const getValidUntil = (gtfsFilesIterator, current) => {
     const next = gtfsFilesIterator.next(current);
@@ -112,26 +100,20 @@ const productType = (id) => {
 }
 
 const parseStations = (stopId, gtfs) => {
+    if (gtfs.stops_persisted) return [];
     const out = [];
-    const s = gtfs.stops[stopId];
-    if (!s) return out;
-    const child = {
-        station_id: s.stop_id,
-        name: s.stop_name,
-        lon: s.stop_lon, 
-        lat: s.stop_lat
-    };
-    if (s.parent_station) {
-        child.parent = s.parent_station; 
-        const p = gtfs.stops[s.parent_station];
+    const keys = Object.keys(gtfs.stops);
+    for (let key of keys) {
+        const s = gtfs.stops[key];
         out.push({
-            station_id: p.stop_id,
-            name: p.stop_name,
-            lon: p.stop_lon, 
-            lat: p.stop_lat
-        });
+            station_id: s.stop_id,
+            name: s.stop_name,
+            lon: s.stop_lon, 
+            lat: s.stop_lat,
+            parent: s.parent_station ? s.parent_station : null
+        });    
     }
-    out.push(child);
+    gtfs.stops_persisted = true;
     return out;
 }
 
@@ -277,7 +259,7 @@ const createRandomOfflineSamples = (gtfs, trip, tripUpdate, sampleTime, samples)
     if (!trip.receivedRealtime || !trip.receivedRealtime[tripUpdate.trip.startDate]) {
         for (let k=0; k<randomOfflineSamplesNumber; k++) {
             const randomSampleTime = Math.round(sampleTime-Math.random()*10*60*60);
-            handleTrip(gtfs, trip, {trip: {startDate: tripUpdate.trip.startDate}}, randomSampleTime, samples);
+            handleTrip(gtfs, trip, {trip: tripUpdate.trip}, randomSampleTime, samples);
         }
         if (!trip.receivedRealtime) trip.receivedRealtime = {};
         trip.receivedRealtime[tripUpdate.trip.startDate] = true;
@@ -309,7 +291,7 @@ const assembleResponse = async (data, gtfs, sampleTime, fallbackSampleTime) => {
         }
     }
     console.log('number of unknown, unscheduled entities vs total', unknownEntityType, unscheduled, data.entity.length);
-    return {response: samples, ts: fallbackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: expectedRtCount, err: null};
+    return {response: samples, hash: md5(fallbackSampleTime), ts: fallbackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: expectedRtCount, err: null};
 }
 
 const extractGtfsrt = async (dir, identifier, source) => {
@@ -319,9 +301,15 @@ const extractGtfsrt = async (dir, identifier, source) => {
         "compression": "unzip",
         "type": "noop"
     }
+    const gtfsrtExplodedSource = {
+        "sourceid": 0,
+        "matches": dir+'*/*.gtfsrt',
+        "compression": "none",
+        "type": "callonce",
+        "restartWhenLastSuccessfullNotMatching": true
+    }
     identifier += '-gtfs';
-    const gtfsrtFiles = await findFiles(dir);
-    console.log('Found', gtfsrtFiles.length, 'gtfsrt files');
+    const gtfsrtFiles = await responseReader(gtfsrtExplodedSource, identifier+'rt-exploded', true);
     const gtfsFilesIterator = await getFilesIterator(gtfsSource);
     
     if (!gtfsCache[identifier]) {
@@ -331,24 +319,23 @@ const extractGtfsrt = async (dir, identifier, source) => {
         gtfsCache[identifier]['data'] = {};
     }
    
-    let i = 0;
+    let gtfsrtFile;
     return {
         next: async () => {
-            if (i < gtfsrtFiles.length) {
-                console.log('reading', gtfsrtFiles[i]);
-                const buffer = fs.readFileSync(gtfsrtFiles[i]);
-                const fallBackSampleTime = new Date(fs.statSync(gtfsrtFiles[i]).mtimeMs);
+            if (gtfsrtFile = await gtfsrtFiles.next(true)) {
+                console.log('reading', gtfsrtFile);
+                const buffer = fs.readFileSync(gtfsrtFile);
+                const fallBackSampleTime = new Date(fs.statSync(gtfsrtFile).mtimeMs);
                 const data = GtfsRealtimeBindings.transit_realtime.FeedMessage.toObject(GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(buffer));
                 let response;
                 if (data && data.header) {
                     const sampleTime = data.header.timestamp?.toNumber();
-                    const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFiles[i]);
+                    const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile);
                     if (gtfsAvailable) response = await assembleResponse(data, gtfsCache[identifier]['data'], sampleTime, fallBackSampleTime);
                     else response = {response: null, ts: fallBackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: 0, err: 'gtfsUnavailable'};
                 } else {
                     response = {response: null, ts: fallBackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: 0, err: 'invalid gtfsrt file'};
                 }
-                i++;
                 return response;
             } else {
                 return null;

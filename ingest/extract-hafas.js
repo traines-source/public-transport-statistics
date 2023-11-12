@@ -78,7 +78,8 @@ const extractHafas = async (file) => {
                     type = responseTypeMapping[type];
                     if (type) {
                         return type.fn(res).then(response => {
-                            return {response: response, ts: null, type: type.id, expectedRtCount: expectedCount};
+                            const hash = md5(raw_utf8);
+                            return {response: response, hash: hash, ts: null, type: type.id, expectedRtCount: expectedCount};
                         }).catch(err => {
                             return {response: null, ts: null, type: type.id, err: err, expectedRtCount: expectedCount};
                         });
