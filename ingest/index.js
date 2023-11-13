@@ -114,12 +114,15 @@ const processSamples = async (target) => {
     let sampleHashes = {};
     let errorOccurred = false;
     let firstSampleTime = undefined;
-    const foreignFields = {
-        operator: { existing: await db.getOperatorMap(target.schema), missing: {} },
-        load_factor: { existing: await db.getLoadFactorMap(target.schema), missing: {} },
-        product_type: { existing: await db.getProductTypeMap(target.schema), missing: {} },
-        prognosis_type: { existing: await db.getPrognosisTypeMap(target.schema), missing: {} }
-    }
+    let foreignFields;
+    if (!target.disableAutoIds) {
+        foreignFields = {
+            operator: { existing: await db.getOperatorMap(target.schema), missing: {} },
+            load_factor: { existing: await db.getLoadFactorMap(target.schema), missing: {} },
+            product_type: { existing: await db.getProductTypeMap(target.schema), missing: {} },
+            prognosis_type: { existing: await db.getPrognosisTypeMap(target.schema), missing: {} }
+        }
+    } 
     for (const source of target.sources) {
         if (source.disabled) continue;
 
@@ -187,7 +190,8 @@ const processSamples = async (target) => {
             ctrs.validResponses++;
 
             const samples = transformSamples[result.type](result.response);
-            const actualCount = samples.filter(e => e.delay_seconds != null).length;
+            //const actualCount = samples.filter(e => e.delay_seconds != null).length;
+            const actualCount = result.expectedRtCount; // TODO
 
             ctrs.samples += samples.length;
             ctrs.rtSamples += actualCount;
@@ -205,7 +209,11 @@ const processSamples = async (target) => {
                 ctrs.emptyResponses++;
             }
 
-            const rtTime = samples.length > 0 ? samples[samples.length-1].sample_time : null;
+            const lastSample = samples[samples.length-1];
+            if (!firstSampleTime) firstSampleTime = samples[0].sample_time;
+            if (lastSample.sample_time-firstSampleTime > 24*60*60) continueWithNextFile = false;
+
+            const rtTime = samples.length > 0 ? lastSample.sample_time : null;
             if (rtTime) {
                 ctrs.rtDiffCount++;
                 const diff = result.ts?.getTime()/1000-rtTime;
@@ -217,18 +225,21 @@ const processSamples = async (target) => {
             let relevantStations = {};
             let relevantRemarks = {};
             let relevantSamples = [];
-            console.log('before iteration', performance.now()-perf_start);
+            console.log('before iteration',source.allowIrrelevantSamples, performance.now()-perf_start);
             perf_start = performance.now();
             for (let sample of samples) {
+                sample.response_id = 1;
+
                 if (!sample.sample_time) {
                     sample.sample_time = result.ts?.getTime()/1000-fallbackRtDiff;
                     ctrs.fallbackSampleTime++;
                 }
                 if (!sample.sample_time) {
                     ctrs.missingSampleTime++;
-                    continue;
+                    if (!source.allowIrrelevantSamples) continue;
+                    else throw new Error('allowing irrelevant samples but no fallback ts set');
                 }
-                if (!source.allowDuplicateSamples) {
+                if (!source.allowIrrelevantSamples) {
                     const sampleHash = md5(JSON.stringify(sample));
                     if (sampleHashes[sampleHash]) {
                         ctrs.sampleDuplicates++;
@@ -236,10 +247,7 @@ const processSamples = async (target) => {
                     }
                     sampleHashes[sampleHash] = true;
                 }
-                
-                if (!firstSampleTime) firstSampleTime = sample.sample_time;
-                else if (sample.sample_time-firstSampleTime > 24*60*60) continueWithNextFile = false;
-                
+            
                 sample = formatSample(sample);
                 if (Math.abs(sample.ttl_minutes) > 24*60) {
                     ctrs.outside24h++;
@@ -247,7 +255,7 @@ const processSamples = async (target) => {
                     if (Math.abs(sample.ttl_minutes) > 6*30*24*60) {
                         ctrs.outside6Months++;
                     }
-                    continue;
+                    if (!source.allowIrrelevantSamples) continue;
                 }
                 if (sample.delay_minutes > 12*60) {
                     ctrs.delayGreater12h++;
@@ -270,23 +278,28 @@ const processSamples = async (target) => {
                     }
                 }
                               
-                relevantSamples.push(sample);                
+                if (!source.allowIrrelevantSamples) relevantSamples.push(sample);                
 
-                setIfMissing(foreignFields.operator, sample.operator?.id, sample.operator);
-                setIfMissing(foreignFields.load_factor, sample.load_factor, sample.load_factor);
-                setIfMissing(foreignFields.product_type, sample.product_type, sample.product_type);
-                setIfMissing(foreignFields.prognosis_type, sample.prognosis_type, sample.prognosis_type);
+                if (!target.disableAutoIds) {
+                    setIfMissing(foreignFields.operator, sample.operator?.id, sample.operator);
+                    setIfMissing(foreignFields.load_factor, sample.load_factor, sample.load_factor);
+                    setIfMissing(foreignFields.product_type, sample.product_type, sample.product_type);
+                    setIfMissing(foreignFields.prognosis_type, sample.prognosis_type, sample.prognosis_type);
+                }
             }
+            if (source.allowIrrelevantSamples) relevantSamples = samples;
 
             ctrs.perf_parse += performance.now()-perf_start;
             console.log('start commit', performance.now()-perf_start);
             perf_start = performance.now();
             try {
                 await db.begin();
-                await insertMissing(foreignFields.operator, db.insertOperators, target.schema);
-                await insertMissing(foreignFields.load_factor, db.insertLoadFactors, target.schema);
-                await insertMissing(foreignFields.product_type, db.insertProductTypes, target.schema);
-                await insertMissing(foreignFields.prognosis_type, db.insertPrognosisTypes, target.schema);
+                if (!target.disableAutoIds) {
+                    await insertMissing(foreignFields.operator, db.insertOperators, target.schema);
+                    await insertMissing(foreignFields.load_factor, db.insertLoadFactors, target.schema);
+                    await insertMissing(foreignFields.product_type, db.insertProductTypes, target.schema);
+                    await insertMissing(foreignFields.prognosis_type, db.insertPrognosisTypes, target.schema);
+                }
                 const relevantStationList = Object.values(relevantStations);
                 if (relevantStationList.length > 0) {
                     console.log('upserting stations', relevantStationList.length);
@@ -301,12 +314,14 @@ const processSamples = async (target) => {
                     const responseId = await db.insertResponse(target.schema, formatResponse(result, source, samples.length, rtTime, ctrs, lastResponseCtrs));
                     console.log('retrofitting samples', performance.now()-perf_start);
                     perf_start = performance.now();
-                    for (let sample of relevantSamples) {
-                        sample.response_id = responseId;
-                        sample.operator_id = foreignFields.operator.existing[sample.operator?.id];
-                        sample.load_factor_id = foreignFields.load_factor.existing[sample.load_factor];
-                        sample.product_type_id = foreignFields.product_type.existing[sample.product_type];
-                        sample.prognosis_type_id = foreignFields.prognosis_type.existing[sample.prognosis_type];
+                    if (!target.disableAutoIds) {
+                        for (let sample of relevantSamples) {
+                            sample.response_id = responseId;
+                            sample.operator_id = foreignFields.operator.existing[sample.operator?.id];
+                            sample.load_factor_id = foreignFields.load_factor.existing[sample.load_factor];
+                            sample.product_type_id = foreignFields.product_type.existing[sample.product_type];
+                            sample.prognosis_type_id = foreignFields.prognosis_type.existing[sample.prognosis_type];
+                        }
                     }
                     console.log('inserting samples', performance.now()-perf_start);
                     perf_start = performance.now();

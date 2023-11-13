@@ -24,6 +24,7 @@
 		"ndjson": "^2.0.0",
 		"node-gzip": "^1.1.2",
 		"pg": "^8.8.0",
+		"pg-copy-streams": "^6.0.6",
 		"strip-bom-stream": "^5.0.0"
 	},
 	"scripts": {},

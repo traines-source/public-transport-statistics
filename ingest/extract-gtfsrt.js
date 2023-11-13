@@ -4,8 +4,9 @@ import md5 from 'md5'
 import fs from 'fs';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import {findAndOpenNextFile, getFilesIterator, responseReader} from './read-response.js';
+import db from './db.js'
 
-const randomOfflineSamplesNumber = 3;
+const randomOfflineSamplesNumber = 1;
 
 const getValidUntil = (gtfsFilesIterator, current) => {
     const next = gtfsFilesIterator.next(current);
@@ -58,11 +59,63 @@ const loadGtfs = async (cache, directory, identifier) => {
         //console.log(row['trip_id'], row);
         const trip = cache['trips'][row['trip_id']];
         if (!trip['stop_times']) trip['stop_times'] = [];
-        trip['stop_times'].push(filterFields(row, ['arrival_time', 'departure_time', 'stop_id', 'stop_sequence']));
+        trip['stop_times'].push({
+            'arrival_time': row['arrival_time'] ? splitTimeStr(row['arrival_time']) : null,
+            'departure_time': row['departure_time'] ? splitTimeStr(row['departure_time']) : null,
+            'stop_id': row['stop_id'],
+            'stop_sequence': parseInt(row['stop_sequence'])
+        });
     });
 }
 
-const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile) => {
+const getStations = (gtfs) => {
+    const out = [];
+    const keys = Object.keys(gtfs.stops);
+    for (let key of keys) {
+        const s = gtfs.stops[key];
+        out.push({
+            station_id: s.stop_id,
+            name: s.stop_name,
+            lonlat: '('+s.stop_lon+','+s.stop_lat+')',
+            parent: s.parent_station ? s.parent_station : null
+        });    
+    }
+    return out;
+}
+
+
+const getOperators = (gtfs) => {
+    const out = [];
+    const keys = Object.keys(gtfs.agency);
+    for (let key of keys) {
+        const s = gtfs.agency[key];
+        s.operator_id = parseInt(s.agency_id) || 0;
+        if (s.operator_id > 30000) s.operator_id = 0;
+        if (s.operator_id == 0) continue;
+        out.push({
+            operator_id: s.operator_id,
+            id: s.agency_id,
+            name: s.agency_name
+        });
+    }
+    out.push({
+        operator_id: 0,
+        id: '0',
+        name: 'Other'
+    });
+    return out;
+}
+
+const persistGtfsToDb = async (gtfs, schema) => {
+    console.log('persisting gtfs stops and agencies');
+    await db.begin();
+    await db.upsertStations(schema, getStations(gtfs));
+    await db.upsertOperators(schema, getOperators(gtfs));
+    await db.commit();
+    console.log('done persisting gtfs stops and agencies');
+}
+
+const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile, schema) => {
     let previousGtfs = undefined;
     while (timestamp > gtfsCache[identifier]['validUntil']) {
         previousGtfs = gtfsCache[identifier]['file'];
@@ -80,73 +133,54 @@ const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtf
         if (open.file != gtfsCache[identifier]['file'])
             throw Error('file mismatch');
         await loadGtfs(gtfsCache[identifier]['data'], open.fileReader, identifier);
+        await persistGtfsToDb(gtfsCache[identifier]['data'], schema);
     }
     return true;
 }
 
 const productType = (id) => {
     // TODO not only switzerland
-    if (id >= 700 && id < 800) return 'bus';
-    if (id >= 200 && id < 300) return 'bus';
-    if (id >= 200 && id < 300) return 'coach';
-    if (id >= 400 && id < 500) return 'metro';
-    if (id >= 900 && id < 1000) return 'tram';
-    if (id >= 101 && id < 103) return 'nationalExpress';
-    if (id >= 105 && id < 106) return 'nationalExpress';
-    if (id >= 100 && id < 104) return 'regionalExpress';
-    if (id >= 104 && id < 109) return 'regional';
-    if (id >= 109 && id < 110) return 'suburban';
-    return 'special';
-}
-
-const parseStations = (stopId, gtfs) => {
-    if (gtfs.stops_persisted) return [];
-    const out = [];
-    const keys = Object.keys(gtfs.stops);
-    for (let key of keys) {
-        const s = gtfs.stops[key];
-        out.push({
-            station_id: s.stop_id,
-            name: s.stop_name,
-            lon: s.stop_lon, 
-            lat: s.stop_lat,
-            parent: s.parent_station ? s.parent_station : null
-        });    
-    }
-    gtfs.stops_persisted = true;
-    return out;
+    if (id >= 700 && id < 800) return 200; //'bus';
+    if (id >= 200 && id < 300) return 200; //'coach';
+    if (id >= 400 && id < 500) return 400; //'metro';
+    if (id >= 900 && id < 1000) return 900; //'tram';
+    if (id >= 101 && id < 103) return 102; //'nationalExpress';
+    if (id >= 105 && id < 106) return 102; //'nationalExpress';
+    if (id >= 100 && id < 104) return 100; //'regionalExpress';
+    if (id >= 104 && id < 109) return 104; //'regional';
+    if (id >= 109 && id < 110) return 109; //'suburban';
+    return 1000; //'special';
 }
 
 const splitTimeStr = (s) => {
     const parts = s.split(':');
     return {
-        hours: parseInt(parts[0]),
-        minutes: parseInt(parts[1]),
-        seconds: parseInt(parts[2])
+        h: parseInt(parts[0]),
+        m: parseInt(parts[1]),
+        s: parseInt(parts[2])
     };
 }
 
 const calculateStartTime = (trip, tripUpdate) => {
-    const scheduled = splitTimeStr(trip.stop_times[0].departure_time);
+    const scheduled = trip.stop_times[0].departure_time;
     const startDate = tripUpdate.trip.startDate;
     const startTime = tripUpdate.trip.startTime ? splitTimeStr(tripUpdate.trip.startTime) : scheduled;
     const noonMinus12 = new Date(
         parseInt(startDate.substring(0,4)),
         parseInt(startDate.substring(4,6))-1,
         parseInt(startDate.substring(6,8)),
-        12+startTime.hours-scheduled.hours
+        12+startTime.h-scheduled.h
     ).getTime()/1000-12*60*60;
     return noonMinus12;
 }
 
-const joinTime = (startTime, scheduledTimeStr, realTime, previousDelay)  => {
-    const scheduledTime = splitTimeStr(scheduledTimeStr);
+const joinTime = (startTime, scheduledTime, realTime, previousDelay)  => {
     let scheduledDatetime;
     let realDatetime = null;
     let delaySeconds = null;
 
     if (!startTime) throw Error('Date fallback not implemented');
-    scheduledDatetime = (startTime+(scheduledTime.hours*60+scheduledTime.minutes)*60+scheduledTime.seconds)*1000;
+    scheduledDatetime = (startTime+(scheduledTime.h*60+scheduledTime.m)*60+scheduledTime.s)*1000;
 
     if (realTime && realTime.delay != undefined) {
         delaySeconds = realTime.delay;
@@ -196,11 +230,13 @@ const isCancelled = (tripCancelled, stopTimeUpdate, previousCancelled) => {
 
 const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
     const route = gtfs.routes[trip.route_id];
+    const operator_id = gtfs.agency[route.agency_id].operator_id;
+    const product_type_id = productType(parseInt(route.route_type));
     const tripCancelled = tripUpdate.trip.scheduleRelationship == GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED;
     const startTime = calculateStartTime(trip, tripUpdate);
-    let previousSample = null;
     let jUpdate = 0;
     let expectedRtCount = 0;
+    let previousSample = null;
     let previousDelay = null;
     let previousCancelled = false;
     for (let j=0; j<trip.stop_times.length; j++) {
@@ -219,15 +255,12 @@ const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
             trip_id: trip.trip_id,
             line_name: route.route_short_name,
             line_fahrtnr: trip.trip_short_name,
-            product_type: productType(parseInt(route.route_type)),
+            product_type_id: product_type_id,
             product_name: route.route_type,
             station_id: stopTime.stop_id,
-            stations: parseStations(stopTime.stop_id, gtfs),
-            operator:  {
-                id: route.agency_id,
-                name: gtfs.agency[route.agency_id].agency_name
-            },
-            stop_number: parseInt(stopTime.stop_sequence),
+            stations: [],
+            operator_id: operator_id,
+            stop_number: stopTime.stop_sequence,
             //remarks, 
             //scheduled_platform
             //projected_platform
@@ -267,6 +300,7 @@ const createRandomOfflineSamples = (gtfs, trip, tripUpdate, sampleTime, samples)
 }
 
 const assembleResponse = async (data, gtfs, sampleTime, fallbackSampleTime) => {
+    console.log('assemble response');
     const samples = [];
     let expectedRtCount = 0;
     let unknownEntityType = 0;
@@ -330,7 +364,7 @@ const extractGtfsrt = async (dir, identifier, source) => {
                 let response;
                 if (data && data.header) {
                     const sampleTime = data.header.timestamp?.toNumber();
-                    const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile);
+                    const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile, source.gtfsSchema);
                     if (gtfsAvailable) response = await assembleResponse(data, gtfsCache[identifier]['data'], sampleTime, fallBackSampleTime);
                     else response = {response: null, ts: fallBackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: 0, err: 'gtfsUnavailable'};
                 } else {

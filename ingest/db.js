@@ -1,4 +1,7 @@
 import pg from 'pg'
+import { from as copyFrom } from 'pg-copy-streams'
+import { Readable } from 'stream';
+import { pipeline } from 'node:stream/promises'
 
 import {conf} from './read-conf.js'
 
@@ -77,6 +80,11 @@ const upsertStations = async (schema, o, detailsOnlyIfNull) => {
         , fmt.values);   
 }
 
+const upsertOperators = async (schema, o) => {
+    const fmt = insertFormat(['operator_id', 'id', 'name'], o);
+    await pgc.query('INSERT INTO '+schema+'.operator ('+fmt.cols+') VALUES '+fmt.format+' ON CONFLICT (operator_id) DO NOTHING', fmt.values);
+}
+
 const upsertRemarks = async (schema, o) => {
     const fmt = insertFormat(['remarks_hash', 'remarks'], o);
     await pgc.query('INSERT INTO '+schema+'.remarks ('+fmt.cols+') VALUES '+fmt.format+' ON CONFLICT (remarks_hash) DO NOTHING', fmt.values);   
@@ -88,7 +96,7 @@ const insertResponse = async (schema, response) => {
     return r.rows[0].response_id;
 }
 
-const insertSamples = async (schema, samples) => {
+const unnestInsertSamples = async (schema, samples) => {
     console.log('preparing samples');
     const fmt = insertFormatArray(
         {'scheduled_time':'timestamptz', 'projected_time':'timestamptz', 'scheduled_duration_minutes':'smallint', 'projected_duration_minutes':'smallint', 'delay_minutes':'smallint', 'cancelled':'boolean', 'sample_time':'timestamptz', 'ttl_minutes':'smallint', 'trip_id':'text', 'line_name':'text', 'line_fahrtnr':'text', 'product_type_id':'smallint', 'product_name':'text', 'station_id':'text', 'operator_id':'smallint', 'is_departure':'boolean', 'remarks_hash':'uuid', 'destination_provenance_id':'text', 'scheduled_platform':'text', 'projected_platform':'text', 'load_factor_id':'smallint', 'prognosis_type_id':'smallint', 'response_id':'int'},
@@ -97,6 +105,54 @@ const insertSamples = async (schema, samples) => {
     console.log('sending query');
     await pgc.query('INSERT INTO '+schema+'.sample ('+fmt.cols+') SELECT * FROM UNNEST '+fmt.format, fmt.values);
     console.log('query sent');
+}
+
+const nullable = (obj) => {
+    if (obj == undefined || obj == null) return '';
+    return obj;
+}
+
+const nullableTime = (obj) => {
+    if (obj == undefined || obj == null) return '';
+    return obj.toISOString();
+}
+
+function * streamToCSV(samples) {
+    let i = 0;
+    const l = samples.length;
+    while (i < l) {
+        const s = samples[i];
+        yield nullableTime(s.scheduled_time)
+            +'\t'+nullableTime(s.projected_time)
+            +'\t'+nullable(s.scheduled_duration_minutes)
+            +'\t'+nullable(s.projected_duration_minutes)
+            +'\t'+nullable(s.delay_minutes)
+            +'\t'+s.cancelled
+            +'\t'+nullableTime(s.sample_time)
+            +'\t'+s.ttl_minutes
+            +'\t'+s.trip_id
+            +'\t'+nullable(s.line_name)
+            +'\t'+nullable(s.line_fahrtnr)
+            +'\t'+nullable(s.product_type_id)
+            +'\t'+nullable(s.product_name)
+            +'\t'+s.station_id
+            +'\t'+nullable(s.operator_id)
+            +'\t'+s.is_departure
+            +'\t'+nullable(s.remarks_hash)
+            +'\t'+nullable(s.stop_number)
+            +'\t'+nullable(s.load_factor_id)
+            +'\t'+nullable(s.response_id)
+            +'\t'+nullable(s.prognosis_type_id)
+            +'\n';
+        i++;
+    }
+}
+
+const insertSamples = async (schema, samples) => {
+    const cols = {'scheduled_time':'timestamptz', 'scheduled_duration_minutes':'smallint', 'projected_duration_minutes':'smallint', 'delay_minutes':'smallint', 'cancelled':'boolean', 'sample_time':'timestamptz', 'ttl_minutes':'smallint', 'trip_id':'text', 'line_name':'text', 'line_fahrtnr':'text', 'product_type_id':'smallint', 'product_name':'text', 'station_id':'text', 'operator_id':'smallint', 'is_departure':'boolean', 'remarks_hash':'uuid', 'stop_number':'smallint', 'load_factor_id':'smallint', 'response_id':'int', 'prognosis_type_id':'smallint'};
+    const ingestStream = pgc.query(copyFrom('COPY '+schema+'.sample ('+Object.keys(cols).join(',')+') FROM STDIN WITH (NULL \'\')'));
+    const sourceStream = Readable.from(streamToCSV(samples));
+    await pipeline(sourceStream, ingestStream);
 }
 
 const updateMaterializedHistograms = async (schema) => {
@@ -160,6 +216,7 @@ export default {
     insertLoadFactors,
     insertPrognosisTypes,
     upsertStations,
+    upsertOperators,
     upsertRemarks,
     insertResponse,
     insertSamples,
