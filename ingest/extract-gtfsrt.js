@@ -206,9 +206,18 @@ const joinTime = (startTime, scheduledTime, realTime, previousTime)  => {
     return {scheduled: scheduledDatetime, real: realDatetime, delay: delaySeconds}
 }
 
-const populateSample = (meta, is_departure, time, sampleTime, previousTime, previousSample) => {
+const populateSample = (meta, is_departure, cancelled, stopTime, time, sampleTime, previousTime, previousSample) => {
     const s = {
-        ...meta,
+        sample_time: meta.sample_time,
+        trip_id: meta.trip_id,
+        line_name: meta.line_name,
+        line_fahrtnr: meta.line_fahrtnr,
+        product_type_id: meta.product_type_id,
+        product_name: meta.product_name,
+        operator_id: meta.operator_id,
+        cancelled: cancelled,
+        station_id: stopTime.stop_id,
+        stop_number: stopTime.stop_sequence,
         scheduled_time: new Date(time.scheduled),
         //projected_time: meta.cancelled ? null : time.real,
         delay_minutes: meta.cancelled || time.delay == null ? null : Math.round(time.delay/60),
@@ -226,7 +235,7 @@ const populateSample = (meta, is_departure, time, sampleTime, previousTime, prev
 }
 
 const matchesStopTime = (stopTime, stopTimeUpdate) => {
-    return stopTimeUpdate?.stopId == stopTime.stop_id || stopTimeUpdate?.stopSequence == parseInt(stopTime.stop_sequence)
+    return stopTimeUpdate.stopId == stopTime.stop_id || stopTimeUpdate.stopSequence == parseInt(stopTime.stop_sequence)
 }
 
 const isCancelled = (tripCancelled, stopTimeUpdate, previousCancelled) => {
@@ -250,7 +259,23 @@ const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
     let previousTime = null;
     let previousSample = null;
     let previousCancelled = false;
-    for (let j=0; j<trip.stop_times.length; j++) {
+
+    const len = trip.stop_times.length;
+    const meta = {
+        sample_time: new Date(sampleTime*1000),
+        trip_id: trip.trip_id,
+        line_name: route.route_short_name,
+        line_fahrtnr: trip.trip_short_name,
+        product_type_id: product_type_id,
+        product_name: route.route_type,
+        operator_id: operator_id,
+        //remarks, 
+        //scheduled_platform
+        //projected_platform
+        //load_factor
+        //response_id
+    }
+    for (let j=0; j<len; j++) {
         const stopTime = trip.stop_times[j];
         let stopTimeUpdate = null;
         if (tripUpdate.stopTimeUpdate?.length > jUpdate+1 && matchesStopTime(stopTime, tripUpdate.stopTimeUpdate[jUpdate+1])) {
@@ -260,35 +285,17 @@ const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
             stopTimeUpdate = tripUpdate.stopTimeUpdate[jUpdate];
         }
 
-        const meta = {
-            cancelled: isCancelled(tripCancelled, stopTimeUpdate, previousCancelled),
-            sample_time: new Date(sampleTime*1000),
-            trip_id: trip.trip_id,
-            line_name: route.route_short_name,
-            line_fahrtnr: trip.trip_short_name,
-            product_type_id: product_type_id,
-            product_name: route.route_type,
-            station_id: stopTime.stop_id,
-            stations: [],
-            operator_id: operator_id,
-            stop_number: stopTime.stop_sequence,
-            //remarks, 
-            //scheduled_platform
-            //projected_platform
-            //load_factor
-            //response_id
-        }
-        previousCancelled = meta.cancelled;
+        previousCancelled = isCancelled(tripCancelled, stopTimeUpdate, previousCancelled);
         if ((stopTimeUpdate?.arrival || stopTime.arrival_time) && j != 0) {
             let time = joinTime(startTime, stopTime.arrival_time, stopTimeUpdate?.arrival, previousTime);
-            previousSample = populateSample(meta, false, time, sampleTime, previousTime, previousSample);
+            previousSample = populateSample(meta, false, previousCancelled, stopTime, time, sampleTime, previousTime, previousSample);
             samples.push(previousSample);
             previousTime = time;
             if (time.delay != null && !meta.cancelled) expectedRtCount++;
         }
-        if ((stopTimeUpdate?.departure || stopTime.departure_time) && j != trip.stop_times.length-1) {
+        if ((stopTimeUpdate?.departure || stopTime.departure_time) && j != len-1) {
             let time = joinTime(startTime, stopTime.departure_time, stopTimeUpdate?.departure, previousTime);
-            previousSample = populateSample(meta, true, time, sampleTime, previousTime, previousSample);
+            previousSample = populateSample(meta, true, previousCancelled, stopTime, time, sampleTime, previousTime, previousSample);
             samples.push(previousSample);
             previousTime = time;
             if (time.delay != null && !meta.cancelled) expectedRtCount++;
@@ -309,38 +316,39 @@ const createRandomOfflineSamples = (gtfs, trip, tripUpdate, sampleTime, samples)
 }
 
 const prepareNextSamples = (tripUpdate, gtfs, sampleTime, samples) => {
+    
     if (!tripUpdate) {
-        return false;
+        return 0;
     }
     const trip = gtfs.trips[tripUpdate.trip.tripId];
     if (!trip || !trip.stop_times?.length) {
-        return false;
+        return 0;
     }
     if (tripUpdate.trip.scheduleRelationship != GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.SCHEDULED
         && tripUpdate.trip.scheduleRelationship != GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED) {
-        return false;
+        return 0;
     }
     createRandomOfflineSamples(gtfs, trip, tripUpdate, sampleTime, samples);
-    handleTrip(gtfs, trip, tripUpdate, sampleTime, samples);
-    return true;
+    return handleTrip(gtfs, trip, tripUpdate, sampleTime, samples);
 }
 
 const assembleResponse = (data, gtfs, sampleTime, fallbackSampleTime) => {
     let len = data.entity.length;
     let i = 0;
+    let expectedRtCount = 0;
     const stream = new Readable({ 
         read() {
-            let samplesRead = false;
+            let samplesRead = 0;
             while (i < len && !samplesRead) {
-                //if (i % 100) console.log('stream', i);
-                samplesRead = prepareNextSamples(data.entity[i].tripUpdate, gtfs, sampleTime, this);
+                samplesRead += prepareNextSamples(data.entity[i].tripUpdate, gtfs, sampleTime, this);
                 i++;
             }
+            expectedRtCount += samplesRead;
             if (i >= len) this.push(null);
         },
         objectMode: true
     });
-    return {response: stream, hash: md5(fallbackSampleTime), ts: fallbackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: null, err: null};
+    return {response: stream, hash: md5(fallbackSampleTime), ts: fallbackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: () => expectedRtCount, err: null};
 }
 
 const extractGtfsrt = async (dir, identifier, source) => {

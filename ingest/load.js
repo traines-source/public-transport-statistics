@@ -215,8 +215,8 @@ const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemark
 
 const updateResponseCtrs = (ctrs, result, lastSampleTime) => {
     const actualCount = ctrs.rtSamples;
-
-    if (result.expectedRtCount && result.expectedRtCount != actualCount) {
+    const expectedRtCount = isNaN(result.expectedRtCount) ? result.expectedRtCount() : result.expectedRtCount;
+    if (expectedRtCount != actualCount) {
         ctrs.incorrectRtCount++;
         const d = result.expectedRtCount - actualCount;
         if (d > 0) ctrs.missingRts += d;
