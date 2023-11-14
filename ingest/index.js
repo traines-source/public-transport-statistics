@@ -26,7 +26,7 @@ const validateResult = (result, ctrs) => {
 }
 
 const shouldContinueWithNextFile = (firstSampleTime, lastSampleTime) => {
-    if (firstSampleTime && lastSampleTime && lastSampleTime.getTime()-firstSampleTime.getTime() > 24*60*60*1000) {
+    if (firstSampleTime && lastSampleTime && lastSampleTime.getTime()-firstSampleTime.getTime() > 5*24*60*60*1000) {
         return false;
     }
     return true;
@@ -114,6 +114,7 @@ const processSamples = async (target) => {
 
             if (responseHashes[result.hash]) {
                 ctrs.duplicateResponses++;
+                console.log('Skipping duplicate response.');
                 continue;
             }
             responseHashes[result.hash] = true;
@@ -152,7 +153,9 @@ const processSamples = async (target) => {
         }
     }
     if (!errorOccurred) {
+        console.log('starting updateMaterializedHistograms');
         await db.updateMaterializedHistograms(target.schema);
+        console.log('done updateMaterializedHistograms');
     }
     return !errorOccurred && targetFirstSampleTime;
 }

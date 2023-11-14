@@ -33,7 +33,7 @@ const getFilesIterator = async (source, identifier) => {
                     return files[i+1];
                 }
             }
-            if (source.restartWhenLastSuccessfullNotMatching) return files[0];
+            if (source.restartWhenLastSuccessfullNotMatching && lastSuccessful != files[files.length-1]) return files[0];
             return null;
         }
     }
