@@ -170,7 +170,6 @@ const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemark
         
         const relevantStationList = Object.values(relevantStations);
         if (relevantStationList.length > 0) {
-            console.log('upserting stations', relevantStationList.length);
             await db.upsertStations(target.schema, relevantStationList);
         }
         const relevantRemarksList = Object.values(relevantRemarks);
@@ -179,7 +178,6 @@ const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemark
         }
         if (relevantSamples.length > 0) {
             const responseId = await db.insertResponse(target.schema, formatResponse(result, source, samples.length, rtTime, ctrs));
-            console.log('retrofitting samples', performance.now()-perf_start);
             perf_start = performance.now();
             if (!target.disableAutoIds) {
                 for (let sample of relevantSamples) {
@@ -190,18 +188,16 @@ const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemark
                     sample.prognosis_type_id = foreignFields.prognosis_type.existing[sample.prognosis_type];
                 }
             }
-            console.log('inserting samples', performance.now()-perf_start);
             perf_start = performance.now();
             await db.insertSamples(target.schema, relevantSamples);
         }
-        console.log('commiting now', performance.now()-perf_start);
         perf_start = performance.now();
         await db.commit();
         ctrs.persistedSamples += relevantSamples.length;
     } catch (err) {
         await db.rollback();
         if (err.table != 'response_log' || err.constraint != 'hash') {
-            console.log(err);
+            console.log('error', err);
             fs.writeFileSync(conf.working_dir+'err_dump.json', JSON.stringify([result.response, relevantStations, relevantSamples, err], null, 2));
             return true;
         } else {
@@ -279,7 +275,7 @@ const streamSamples = async (samplesStream, ctrs, result, target, source) => {
         ctrs.persistedSamples += ctrs.relevantSamples;
     } catch (err) {
         await db.rollback();
-        console.log(err);
+        console.log('error', err);
         errorOccurred = true;
     }
     return {firstSampleTime: firstSampleTime, lastSampleTime: lastSampleTime, errorOccurred: errorOccurred};

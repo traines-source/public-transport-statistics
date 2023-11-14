@@ -8,21 +8,21 @@ import {extractFptf} from './extract-fptf.js';
 import {extractGtfsrt} from './extract-gtfsrt.js';
 import {conf} from './read-conf.js';
 
-const findFiles = (source) => {
+const findFiles = (source, identifier) => {
     return new Promise((done, failed) => {
         glob(source.matches, {}, function (er, files) {
             if (er) {
                 failed(er);
                 return;
             }
-            console.log('Source ID '+source.sourceid+': '+files.length+' files');
+            console.log('Source ', source.sourceid, identifier, files.length, 'files');
             done(files);
         });
     });
 }
 
-const getFilesIterator = async (source) => {
-    const files = await findFiles(source);
+const getFilesIterator = async (source, identifier) => {
+    const files = await findFiles(source, identifier);
     return {
         next: (lastSuccessful) => {
             if (!lastSuccessful) {
@@ -77,8 +77,8 @@ const decompressFile = (cmdToStdout, file, identifier, slot) => {
 const decompressFolder = (cmd, dirflag, file, identifier, slot) => {
     const uncompressedDir = conf.working_dir+identifier+'.'+slot+'.uncompressed/';
     return new Promise((done, failed) => {
-        done({uncompressed: uncompressedDir, file: file});
-        return;
+        //done({uncompressed: uncompressedDir, file: file});
+        //return;
         fs.rmSync(uncompressedDir, { recursive: true, force: true });
         fs.mkdirSync(uncompressedDir);
         exec(cmd+file+dirflag+uncompressedDir, (err, stdout, stderr) => {
@@ -124,7 +124,6 @@ const findAndOpenNextFile = async (source, identifier, filesIterator, lastSucces
     }
     let uncompressing = uncompressingJobs[identifier];
     let file = filesIterator.next(lastSuccessful);
-    console.log(file);
     if (!file) return {file: null, fileReader: null};    
     if (!uncompressing.file) {
         uncompressing.file = fileLoader[source.compression](file, identifier, uncompressing.slot);
@@ -132,28 +131,29 @@ const findAndOpenNextFile = async (source, identifier, filesIterator, lastSucces
     let loadedFile = await uncompressing.file;
     if (loadedFile.file != file) {
         console.log('TERMINATING. Uncompressed file does not match expected file', loadedFile.file, file);
-        return {file: null, fileReader: null};
+        throw Error('TERMINATING. Uncompressed file does not match expected file');
     }
-    console.log('File', file, ' loaded.', loadedFile);
+    console.log('File', file, 'loaded');
     let nextFile = filesIterator.next(file);
-    if (nextFile) {    
-        console.log('Preloading file', nextFile);
-        uncompressing.slot = uncompressing.slot == 'slot0' ? 'slot1' : 'slot0';
+    uncompressing.slot = uncompressing.slot == 'slot0' ? 'slot1' : 'slot0';
+    if (nextFile) {
         uncompressing.file = fileLoader[source.compression](nextFile, identifier, uncompressing.slot);
+    } else {
+        uncompressing.file = null;
     }
     return {file: file, fileReader: await fileReader[source.type](loadedFile.uncompressed, identifier, source)};
 }
 
 const responseReader = async (source, identifier, update) => {
     let iterator;
-    let filesIterator = await getFilesIterator(source);
+    let filesIterator = await getFilesIterator(source, identifier);
     let lastFile;
     let i = 0;
     return {
         next: (continueWithNextFile) => {
             return new Promise((done, failed) => {
                 const renewIterator = () => {
-                    console.log('file', i);
+                    console.log('file', identifier, i);
                     const lastSuccessful = updateLastSuccessful(lastFile, identifier, update);
                     if (!continueWithNextFile) {
                         console.log('Stopping loading next file.');

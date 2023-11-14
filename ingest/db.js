@@ -149,7 +149,6 @@ const fakeStreamToTSV = (samples) => {
 const sampleCols = {'scheduled_time':'timestamptz', 'scheduled_duration_minutes':'smallint', 'projected_duration_minutes':'smallint', 'delay_minutes':'smallint', 'cancelled':'boolean', 'sample_time':'timestamptz', 'ttl_minutes':'smallint', 'trip_id':'text', 'line_name':'text', 'line_fahrtnr':'text', 'product_type_id':'smallint', 'product_name':'text', 'station_id':'text', 'operator_id':'smallint', 'is_departure':'boolean', 'remarks_hash':'uuid', 'stop_number':'smallint', 'load_factor_id':'smallint', 'response_id':'int', 'prognosis_type_id':'smallint'};
 
 const streamInsertSamples = (schema) => {
-    console.log('obtain insert stream');
     return pgc.query(copyFrom('COPY '+schema+'.sample ('+Object.keys(sampleCols).join(',')+') FROM STDIN WITH (NULL \'\')'));
 }
 

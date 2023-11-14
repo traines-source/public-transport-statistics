@@ -7,16 +7,15 @@ import { Readable } from 'stream';
 
 import {findAndOpenNextFile, getFilesIterator, responseReader} from './read-response.js';
 import db from './db.js'
-import {conf} from './read-conf.js';
 
 const randomOfflineSamplesNumber = 1;
+const randomBusSamplingFactor = 0.1;
+const gtfsrtFileSampling = 3;
 
 const getValidUntil = (gtfsFilesIterator, current) => {
     const next = gtfsFilesIterator.next(current);
-    console.log(next);
     if (next) {
         const mtime = new Date(fs.statSync(next).mtimeMs);
-        console.log(mtime);
         return new Date(mtime.getFullYear(), mtime.getMonth(), mtime.getDate(), 14, 0, 0, 0).getTime()/1000;
     }
     return null;
@@ -57,9 +56,7 @@ const loadGtfs = async (cache, directory) => {
     await parseGtfsCsv(cache, directory, 'stops', 'stop_id', ['stop_name', 'stop_lat', 'stop_lon', 'parent_station', 'platform_code']);
     await parseGtfsCsv(cache, directory, 'routes', 'route_id', ['agency_id', 'route_short_name', 'route_type', 'route_desc']);
     await parseGtfsCsv(cache, directory, 'trips', 'trip_id', ['route_id', 'trip_short_name']);
-    console.log(Object.keys(cache['trips']).length, cache['trips'][Object.keys(cache['trips'])[0]]);
     await parseCsv(directory+'stop_times.txt', (row) => {
-        //console.log(row['trip_id'], row);
         const trip = cache['trips'][row['trip_id']];
         if (!trip['stop_times']) trip['stop_times'] = [];
         trip['stop_times'].push({
@@ -124,26 +121,18 @@ const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtf
         previousGtfs = gtfsCache[identifier]['file'];
         gtfsCache[identifier]['file'] = gtfsFilesIterator.next(gtfsCache[identifier]['file']);
         gtfsCache[identifier]['validUntil'] = getValidUntil(gtfsFilesIterator, gtfsCache[identifier]['file']);
-        console.log(gtfsCache[identifier]['file'], gtfsCache[identifier]['validUntil'])
         if (!gtfsCache[identifier]['file'] || !gtfsCache[identifier]['validUntil']) {
             console.log('stopping. missing up to date GTFS');
             return false;
         }
     }
     if (previousGtfs != undefined) {
-        /*const fastLoadFile = conf.working_dir+identifier+'_gtfscache.json';
-        if (fs.existsSync(fastLoadFile)) {
-            console.log('Using GTFS fastLoadFile');
-            gtfsCache[identifier] = JSON.parse(fs.readFileSync(fastLoadFile));
-            return true;
-        }*/
         console.log('Switching to GTFS', gtfsCache[identifier]['file'], 'for GTFSRT', gtfsrtFile);
         const open = await findAndOpenNextFile(gtfsSource, identifier, gtfsFilesIterator, previousGtfs);
         if (open.file != gtfsCache[identifier]['file'])
             throw Error('file mismatch');
         await loadGtfs(gtfsCache[identifier]['data'], open.fileReader);
         await persistGtfsToDb(gtfsCache[identifier]['data'], schema);
-        //fs.writeFileSync(fastLoadFile, JSON.stringify(gtfsCache[identifier]), 'utf8');
     }
     return true;
 }
@@ -316,7 +305,6 @@ const createRandomOfflineSamples = (gtfs, trip, tripUpdate, sampleTime, samples)
 }
 
 const prepareNextSamples = (tripUpdate, gtfs, sampleTime, samples) => {
-    
     if (!tripUpdate) {
         return 0;
     }
@@ -326,6 +314,10 @@ const prepareNextSamples = (tripUpdate, gtfs, sampleTime, samples) => {
     }
     if (tripUpdate.trip.scheduleRelationship != GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.SCHEDULED
         && tripUpdate.trip.scheduleRelationship != GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED) {
+        return 0;
+    }
+    const route = gtfs.routes[trip.route_id];
+    if (productType(parseInt(route.route_type)) == 700 && Math.random() > randomBusSamplingFactor) {
         return 0;
     }
     createRandomOfflineSamples(gtfs, trip, tripUpdate, sampleTime, samples);
@@ -367,7 +359,7 @@ const extractGtfsrt = async (dir, identifier, source) => {
     }
     identifier += '-gtfs';
     const gtfsrtFiles = await responseReader(gtfsrtExplodedSource, identifier+'rt-exploded', true);
-    const gtfsFilesIterator = await getFilesIterator(gtfsSource);
+    const gtfsFilesIterator = await getFilesIterator(gtfsSource, identifier);
     
     if (!gtfsCache[identifier]) {
         gtfsCache[identifier] = {};
@@ -379,7 +371,11 @@ const extractGtfsrt = async (dir, identifier, source) => {
     let gtfsrtFile;
     return {
         next: async () => {
-            if (gtfsrtFile = await gtfsrtFiles.next(true)) {
+            let i = 0;
+            while (i < gtfsrtFileSampling && (gtfsrtFile = await gtfsrtFiles.next(true))) {
+                i++;
+            }
+            if (gtfsrtFile) {
                 console.log('reading', gtfsrtFile);
                 const buffer = fs.readFileSync(gtfsrtFile);
                 const fallBackSampleTime = new Date(fs.statSync(gtfsrtFile).mtimeMs);
@@ -396,6 +392,7 @@ const extractGtfsrt = async (dir, identifier, source) => {
                 console.log('prepared response');
                 return response;
             } else {
+                console.log('gtfsrt batch finished.');
                 return null;
             }
         }

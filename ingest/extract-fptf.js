@@ -37,7 +37,7 @@ const assembleResponse = async (readLines) => {
         response = JSON.parse(raw_utf8);
         hash = md5(raw_utf8);
     } catch(e) {
-        console.log(e)
+        console.log('error', e)
         err = e;
     }
     return {response: response, hash: hash, ts: meta?.ts, type: meta?.type, expectedRtCount: expectedCount, err: err};

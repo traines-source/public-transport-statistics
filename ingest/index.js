@@ -111,7 +111,6 @@ const processSamples = async (target) => {
                 }
                 continue;
             }
-            console.log('validated');
 
             if (responseHashes[result.hash]) {
                 ctrs.duplicateResponses++;
@@ -153,7 +152,7 @@ const processSamples = async (target) => {
         }
     }
     if (!errorOccurred) {
-        //await db.updateMaterializedHistograms(target.schema);
+        await db.updateMaterializedHistograms(target.schema);
     }
     return !errorOccurred && targetFirstSampleTime;
 }
