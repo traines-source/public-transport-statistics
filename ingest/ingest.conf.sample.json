@@ -6,7 +6,7 @@
     "working_dir": "/working/",
     "targets": [
         {
-            "schema": "db",
+            "schema": "de_db",
             "sources": [
                 {
                     "sourceid": 0,
@@ -28,6 +28,22 @@
                     "compression": "gzip-single",
                     "type": "fptf",
                     "disabled": true
+                }
+            ]
+        },
+        {
+            "schema": "ch_sbb",
+            "disabled": true,
+            "disableAutoIds": true,
+            "sources": [
+                {
+                    "sourceid": 0,
+                    "matches": "/source/swiss-gtfs-rt/*.tar.bz2",
+                    "gtfsmatches": "/source/swiss-gtfs/*/*.zip",
+                    "gtfsSchema": "ch_sbb",
+                    "compression": "bz2-tar",
+                    "type": "gtfsrt",
+                    "disabled": false
                 }
             ]
         }

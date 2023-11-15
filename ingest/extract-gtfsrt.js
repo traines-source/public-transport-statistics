@@ -379,8 +379,14 @@ const extractGtfsrt = async (dir, identifier, source) => {
                 console.log('reading', gtfsrtFile);
                 const buffer = fs.readFileSync(gtfsrtFile);
                 const fallBackSampleTime = new Date(fs.statSync(gtfsrtFile).mtimeMs);
-                const data = GtfsRealtimeBindings.transit_realtime.FeedMessage.toObject(GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(buffer));
+                let data;
                 let response;
+                try {
+                    data = GtfsRealtimeBindings.transit_realtime.FeedMessage.toObject(GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(buffer));
+                } catch (e) {
+                    console.log(e);
+                    console.log('Skipping.');
+                }
                 if (data && data.header) {
                     const sampleTime = data.header.timestamp?.toNumber();
                     const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile, source.gtfsSchema);
