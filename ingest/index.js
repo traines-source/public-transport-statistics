@@ -142,6 +142,7 @@ const processSamples = async (target) => {
                 responseHashes = {};
                 sampleHashes = {};
             }
+            if (errorOccurred) break;
         }
 
         console.log('finished source');

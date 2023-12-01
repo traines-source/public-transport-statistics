@@ -160,7 +160,7 @@ const getFallbackSampleTime = (result) => {
     return result.ts?.getTime()/1000-fallbackRtDiff;
 }
 
-const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields) => {
+const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields, lastSampleTime) => {
     try {
         await db.begin();
         await insertMissing(foreignFields.operator, db.insertOperators, target.schema);
@@ -177,7 +177,7 @@ const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemark
             await db.upsertRemarks(target.schema, relevantRemarksList);
         }
         if (relevantSamples.length > 0) {
-            const responseId = await db.insertResponse(target.schema, formatResponse(result, source, samples.length, rtTime, ctrs));
+            const responseId = await db.insertResponse(target.schema, formatResponse(result, source, ctrs.samples, lastSampleTime, ctrs));
             perf_start = performance.now();
             if (!target.disableAutoIds) {
                 for (let sample of relevantSamples) {
@@ -246,7 +246,7 @@ const loopSamples = async (samples, ctrs, result, target, source, sampleHashes, 
         }
     }
     updateResponseCtrs(ctrs, result, lastSampleTime);
-    const errorOccurred = await blockCommit(relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields);
+    const errorOccurred = await blockCommit(relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields, lastSampleTime);
     return {firstSampleTime: firstSampleTime, lastSampleTime: lastSampleTime, errorOccurred: errorOccurred};
 }
 

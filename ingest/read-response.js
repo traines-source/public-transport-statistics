@@ -21,6 +21,10 @@ const findFiles = (source, identifier) => {
     });
 }
 
+const ignoreSlot = (filename) => {
+    return filename.replace(/\.slot\d\./, '');
+}
+
 const getFilesIterator = async (source, identifier) => {
     const files = await findFiles(source, identifier);
     return {
@@ -29,11 +33,11 @@ const getFilesIterator = async (source, identifier) => {
                 return files[0];
             }
             for (let i=0; i<files.length-1; i++) {
-                if (lastSuccessful == files[i]) {
+                if (ignoreSlot(lastSuccessful) == ignoreSlot(files[i])) {
                     return files[i+1];
                 }
             }
-            if (source.restartWhenLastSuccessfullNotMatching && lastSuccessful != files[files.length-1]) return files[0];
+            if (source.restartWhenLastSuccessfullNotMatching && ignoreSlot(lastSuccessful) != ignoreSlot(files[files.length-1])) return files[0];
             return null;
         }
     }

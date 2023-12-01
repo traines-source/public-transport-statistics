@@ -340,7 +340,7 @@ const assembleResponse = (data, gtfs, sampleTime, fallbackSampleTime) => {
         },
         objectMode: true
     });
-    return {response: stream, hash: md5(fallbackSampleTime), ts: fallbackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: () => expectedRtCount, err: null};
+    return {response: stream, hash: md5(fallbackSampleTime.getTime().toString()), ts: fallbackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: () => expectedRtCount, err: null};
 }
 
 const extractGtfsrt = async (dir, identifier, source) => {
