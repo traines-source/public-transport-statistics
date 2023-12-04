@@ -121,6 +121,7 @@ const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtf
         previousGtfs = gtfsCache[identifier]['file'];
         gtfsCache[identifier]['file'] = gtfsFilesIterator.next(gtfsCache[identifier]['file']);
         gtfsCache[identifier]['validUntil'] = getValidUntil(gtfsFilesIterator, gtfsCache[identifier]['file']);
+        gtfsCache[identifier]['data'] = {};
         if (!gtfsCache[identifier]['file'] || !gtfsCache[identifier]['validUntil']) {
             console.log('stopping. missing up to date GTFS');
             return false;

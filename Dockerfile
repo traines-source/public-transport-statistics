@@ -1,4 +1,4 @@
-FROM node:16
+FROM node:21
 
 WORKDIR /app
 
@@ -8,4 +8,4 @@ RUN npm install
 
 COPY . .
 
-CMD [ "node", "ingest/index.js" ]
+CMD [ "node", "--max-old-space-size=8192", "ingest/index.js" ]
