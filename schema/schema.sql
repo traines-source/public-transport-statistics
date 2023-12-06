@@ -86,7 +86,16 @@ ALTER FUNCTION de_db.delay_bucket_range(val smallint) OWNER TO "public-transport
 
 CREATE FUNCTION de_db.reduced_latest_sample_ttl_bucket_range(val int4range) RETURNS int4range
     LANGUAGE sql
-    AS $$SELECT de_db.latest_sample_ttl_bucket_range(val) as tt_bucket$$;
+    AS $$SELECT
+CAST(
+	CASE
+	WHEN val <@ '(,-15)'::int4range THEN '(,-15)'
+	WHEN val <@ '[-15,0)'::int4range THEN '[-15,0)'
+	WHEN val <@ '[0,15)'::int4range THEN '[0,15)'
+	WHEN val <@ '[15,)'::int4range THEN '[15,)'
+	ELSE NULL END
+	AS int4range
+) AS ttl_bucket$$;
 
 
 ALTER FUNCTION de_db.reduced_latest_sample_ttl_bucket_range(val int4range) OWNER TO "public-transport-stats";
@@ -213,11 +222,11 @@ SELECT
 	load_factor_id,
 	prior_ttl_bucket,
 	prior_delay_bucket,
-	de_db.reduced_latest_sample_ttl_bucket_range(latest_sample_ttl_bucket) AS latest_sample_ttl_bucket,
+	de_db.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket) AS latest_sample_ttl_bucket,
 	latest_sample_delay_bucket,
     sum(sample_count) AS sample_count
 FROM temp_sample_histogram
-GROUP BY date_part('dow', scheduled_time)::smallint, date_part('hour', scheduled_time)::smallint, product_type_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, de_db.reduced_latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
+GROUP BY date_part('dow', scheduled_time)::smallint, date_part('hour', scheduled_time)::smallint, product_type_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, de_db.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
 UNION ALL
 SELECT * FROM de_db.sample_histogram_by_hour
 ) AS t
@@ -242,11 +251,11 @@ SELECT
 	is_departure,
 	prior_ttl_bucket,
 	prior_delay_bucket,
-	de_db.reduced_latest_sample_ttl_bucket_range(latest_sample_ttl_bucket) AS latest_sample_ttl_bucket,
+	de_db.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket) AS latest_sample_ttl_bucket,
 	latest_sample_delay_bucket,
     sum(sample_count) AS sample_count
 FROM temp_sample_histogram
-GROUP BY date_trunc('day'::text, scheduled_time), product_type_id, operator_id, is_departure, prior_ttl_bucket, prior_delay_bucket, de_db.reduced_latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
+GROUP BY date_trunc('day'::text, scheduled_time), product_type_id, operator_id, is_departure, prior_ttl_bucket, prior_delay_bucket, de_db.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
 UNION ALL
 SELECT * FROM de_db.sample_histogram_by_day
 ) AS t
@@ -273,11 +282,11 @@ SELECT
 	load_factor_id,
 	prior_ttl_bucket,
 	prior_delay_bucket,
-	de_db.reduced_latest_sample_ttl_bucket_range(latest_sample_ttl_bucket) AS latest_sample_ttl_bucket,
+	de_db.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket) AS latest_sample_ttl_bucket,
 	latest_sample_delay_bucket,
     sum(sample_count) AS sample_count
 FROM temp_sample_histogram
-GROUP BY line_name, product_type_id, station_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, de_db.reduced_latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
+GROUP BY line_name, product_type_id, station_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, de_db.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
 UNION ALL
 SELECT * FROM de_db.sample_histogram_by_station
 ) AS t
@@ -332,6 +341,12 @@ ALTER TABLE de_db.temp_sample RENAME TO sample;
 
 DROP TABLE temp_freeze_threshold;
 
+
+
+GRANT SELECT ON TABLE de_db.sample_histogram_by_day TO "public-transport-stats-read";
+GRANT SELECT ON TABLE de_db.sample_histogram_by_duration TO "public-transport-stats-read";
+GRANT SELECT ON TABLE de_db.sample_histogram_by_hour TO "public-transport-stats-read";
+GRANT SELECT ON TABLE de_db.sample_histogram_by_station TO "public-transport-stats-read";
 
 
 
@@ -622,7 +637,7 @@ ALTER SEQUENCE de_db.response_log_response_id_seq OWNED BY de_db.response_log.re
 -- Name: sample; Type: TABLE; Schema: de_db; Owner: public-transport-stats
 --
 
-CREATE UNLOGGED TABLE de_db.sample (
+CREATE TABLE de_db.sample (
     id bigint NOT NULL,
     scheduled_time timestamp with time zone NOT NULL,
     scheduled_duration_minutes smallint,
@@ -1077,11 +1092,11 @@ ALTER TABLE ONLY de_db.station
 
 
 --
--- Name: sample temp_sample_pkey1; Type: CONSTRAINT; Schema: de_db; Owner: public-transport-stats
+-- Name: sample temp_sample_pkey; Type: CONSTRAINT; Schema: de_db; Owner: public-transport-stats
 --
 
 ALTER TABLE ONLY de_db.sample
-    ADD CONSTRAINT temp_sample_pkey1 PRIMARY KEY (id);
+    ADD CONSTRAINT temp_sample_pkey PRIMARY KEY (id);
 
 
 --
@@ -1178,13 +1193,6 @@ GRANT SELECT ON TABLE de_db.response_log TO "public-transport-stats-read";
 
 
 --
--- Name: TABLE sample_histogram; Type: ACL; Schema: de_db; Owner: public-transport-stats
---
-
-GRANT SELECT ON TABLE de_db.sample_histogram TO "public-transport-stats-read";
-
-
---
 -- Name: TABLE sample_histogram_by_day; Type: ACL; Schema: de_db; Owner: public-transport-stats
 --
 
@@ -1211,6 +1219,12 @@ GRANT SELECT ON TABLE de_db.sample_histogram_by_hour TO "public-transport-stats-
 
 GRANT SELECT ON TABLE de_db.sample_histogram_by_month TO "public-transport-stats-read";
 
+
+--
+-- Name: TABLE sample_histogram_by_station; Type: ACL; Schema: de_db; Owner: public-transport-stats
+--
+
+GRANT SELECT ON TABLE de_db.sample_histogram_by_station TO "public-transport-stats-read";
 
 
 --
