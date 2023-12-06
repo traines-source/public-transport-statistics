@@ -41,7 +41,8 @@ The table where all samples are recorded. Many fields are based on [FPTF (Friend
 
 * id: autoincrement id
 * scheduled_time: FPTF plannedWhen/plannedArrival/plannedDeparture, time when arrival/departure was originally scheduled
-* projected_time: FPTF when/arrival/departure, time when arrival/departure is currently projected based on delay. Null only when cancelled. When delay_minutes is null, this field is still set (then equal to scheduled_time)
+* scheduled_duration_minutes: How long this connection takes to the next stop according to schedule (not always available).
+* projected_duration_minutes: How long this connection takes to the next stop according to current prediction (Not always available).
 * delay_minutes: Null when no realtime data available or when cancelled. Realtime data usually gets nulled by the source system a few minutes after actual arrival/departure. Negative when too early.
 * cancelled: Either this stop or the entire trip was cancelled.
 * sample_time: When this sample was taken, i.e. when the data contained in this row was current.
@@ -56,18 +57,19 @@ The table where all samples are recorded. Many fields are based on [FPTF (Friend
 * is_departure: Indicates arrival/departure.
 * remarks_hash: FK remarks, FPTF remarks.
 * stop_number: Can be used to indicate how many stops came before this stop on this trip.
-* destination_provenance_id: Destination if is_departure, provenance if NOT is_departure.
-* scheduled_platform: FPTF plannedPlatform
-* projected_platform: FPTF platform
+* (destination_provenance_id: Destination if is_departure, provenance if NOT is_departure.)
+* (scheduled_platform: FPTF plannedPlatform)
+* (projected_platform: FPTF platform)
 * load_factor_id: FK load_factor, FPTF loadFactor
 * response_id: FK response_log
 
 ### sample_histogram
 
-First aggregation step, this is basically an n-dimensional histogram (n being the number of dimension columns) that you can sum over to get coarser stats (but be careful how, see queries below).
+First aggregation step, this is basically an n-dimensional histogram (n being the number of dimension columns) that you can sum over to get coarser stats (but be careful how, see queries below). In order to fight the curse of dimensionality, different incremental aggregations are created (`sample_histogram_by_day`, `sample_histogram_by_hour`, `sample_histogram_by_station`). By default, the full sample table and sample_histogram are not kept anymore to save storage! 
 
 * scheduled_time by hour
 * year, month, day, day_of_week, hour: extracted from scheduled_time in GMT
+* line_name
 * product_type_id
 * station_id
 * operator_id
@@ -91,96 +93,17 @@ For more insight on `latest_sample_ttl_bucket`, check out the "Realtime data del
 
 ## Core queries
 
-### Filtering latest_samples
+### Filtering latest_samples and first aggregation to sample_histogram
 
-```
-SELECT DISTINCT ON(trip_id, scheduled_time, station_id, is_departure)
-trip_id, scheduled_time, station_id, is_departure,
-ttl_minutes, id, sample_time,
-CASE
-	WHEN cancelled THEN NULL
-	ELSE delay_minutes
-END AS delay_minutes,
-CASE
-	WHEN cancelled AND substitute_running.remarks_hash IS NOT NULL THEN true
-	WHEN cancelled THEN false
-	ELSE NULL
-END AS cancelled_with_substitute
-FROM db.sample s
-LEFT JOIN (
-	SELECT DISTINCT remarks_hash
-	FROM (
-		SELECT remarks_hash, jsonb_array_elements(remarks) AS r
-		FROM db.remarks r
-	) AS d
-	WHERE
-	r->>'code' = 'alternative-trip'
-	OR r->>'text' LIKE '%CE 29%' 
-	OR r->>'text' LIKE '%C 29%'
-	OR r->>'text' LIKE '%Ersatzfahrt%'
-	OR r->>'text' LIKE '%substitute%'
-) AS substitute_running
-ON substitute_running.remarks_hash = s.remarks_hash
-WHERE delay_minutes IS NOT NULL OR cancelled
-ORDER BY trip_id, scheduled_time, station_id, is_departure, sample_time DESC, ttl_minutes ASC 
-```
+See procedure [refresh_histograms_and_cleanup_samples()](https://github.com/traines-source/public-transport-statistics/blob/master/schema/schema.sql#L144). This procedure will be triggered automatically when ingesting. The procedure refresh_histograms_aggregations() can be triggered manually to update the aggregations `sample_histogram_without_time` and `sample_histogram_by_month` that are used by the dashboard for faster querying.
 
 Since we do not actually know the final delay of a trip at a station, we record the latest samples for each trip-station-scheduled_time-is_departure combination and take that as ground truth. We can later restrict our statistics to latest samples that were taken not too far from final departure/arrival (cf. `latest_sample_ttl_bucket`).
 
 For cancelled trips, we detect based on the recorded remarks whether a substitute trip is running and as such, from a traveler's perspective, whether the trip is not actually cancelled.
 
-### First aggregation to VIEW sample_histogram
-
-```
-SELECT r.scheduled_time,
-    date_part('year', r.scheduled_time)::smallint AS year,
-    date_part('month', r.scheduled_time)::smallint AS month,
-    date_part('day', r.scheduled_time)::smallint AS day,
-    date_part('dow', r.scheduled_time)::smallint AS day_of_week,
-    date_part('hour', r.scheduled_time)::smallint AS hour,
-    r.product_type_id,
-    r.station_id,
-    r.operator_id,
-    r.is_departure,
-    r.prior_ttl_bucket,
-    r.prior_delay_bucket,
-    r.latest_sample_ttl_bucket,
-    r.latest_sample_delay_bucket,
-    r.sample_count,
-	SUM(sample_count) OVER (PARTITION BY 
-		scheduled_time, product_type_id, station_id, is_departure,
-		prior_delay_bucket, prior_ttl_bucket, latest_sample_ttl_bucket
-	) AS total_sample_count
-FROM (
-	SELECT date_trunc('hour'::text, s.scheduled_time) AS scheduled_time, product_type_id, s.station_id, s.operator_id, s.is_departure,
-	CASE
-		WHEN latest_sample.id = s.id THEN NULL
-		ELSE db.ttl_bucket_range(s.ttl_minutes)
-	END AS prior_ttl_bucket, -- NULL without prior delay
-	CASE
-		WHEN latest_sample.id = s.id THEN NULL
-		ELSE db.delay_bucket_range(s.delay_minutes)
-	END AS prior_delay_bucket, -- NULL without prior delay or for trains not yet having live data
-	db.ttl_bucket_range(latest_sample.ttl_minutes) AS latest_sample_ttl_bucket, -- hopefully never NULL (INNER JOIN)
-	CASE
-		WHEN latest_sample.cancelled_with_substitute = true THEN '(,)'::int4range
-		WHEN latest_sample.id = s.id OR s.delay_minutes IS NULL THEN db.delay_bucket_range(latest_sample.delay_minutes)
-		ELSE db.delay_bucket_range(latest_sample.delay_minutes-s.delay_minutes) 
-	END AS latest_sample_delay_bucket, -- relative delay with prior delay, else absolute delay. NULL when stop cancelled. '(,)' when stop cancelled but substitution trip running.
-	COUNT(*) as sample_count
-	FROM db.sample AS s
-	INNER JOIN db.latest_sample
-	ON s.trip_id = latest_sample.trip_id
-	AND s.scheduled_time = latest_sample.scheduled_time
-	AND s.station_id = latest_sample.station_id
-	AND s.is_departure = latest_sample.is_departure
-	WHERE NOT s.cancelled OR latest_sample.id = s.id
-	GROUP BY date_trunc('hour', s.scheduled_time), product_type_id, s.station_id, s.operator_id, s.is_departure,
-	prior_delay_bucket, prior_ttl_bucket, latest_sample_delay_bucket, latest_sample_ttl_bucket
-) AS r
-```
-
 ### Dashboard: Relative histogram with prior_delay_bucket and prior_ttl_bucket by product_type
+
+Also see the [dashboard](https://stats.traines.eu/) and inspect panels.
 
 ```
 SELECT CASE WHEN l.latest_sample_delay_bucket IS NULL THEN 'cancelled' ELSE l.latest_sample_delay_bucket::text END as label, (sample_count/SUM(sample_count) OVER ()) AS percent_of_departures

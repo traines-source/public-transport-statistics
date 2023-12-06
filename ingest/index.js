@@ -38,7 +38,7 @@ const resetCtrs = (ctrs, globalCtrs) => {
         globalCtrs[key] += value;
         ctrs[key] = 0;
     }
-    if (globalCtrs.validResponses % 1000 == 0) {
+    if (globalCtrs.validResponses % 10000 == 0) {
         console.log('counters:', globalCtrs, new Date());
         console.log('perf', globalCtrs.perf_read/globalCtrs.perf_ctr, globalCtrs.perf_parse/globalCtrs.perf_ctr, globalCtrs.perf_persist/globalCtrs.perf_ctr);
         globalCtrs.perf_read = 0;
