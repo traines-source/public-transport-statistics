@@ -40,7 +40,7 @@ const formatResponse = (result, source, sampleCount, rtTime, ctrs) => {
     return {
         hash: result.hash,
         type: typeIds[result.type],
-        response_time: result.ts || (rtTime ? new Date((rtTime+fallbackRtDiff)*1000): null),
+        response_time: result.ts || (rtTime ? new Date(rtTime.getTime()+fallbackRtDiff*1000) : null),
         response_time_estimated: !result.ts,
         sample_time_estimated: !rtTime,
         source: source.sourceid,
@@ -95,7 +95,7 @@ const formatSample = (sample) => {
     return true;
 }
 
-const enrichSample = (sample, ctrs, source, sampleHashes, relevantRemarks, relevantStations, foreignFields) => {
+const enrichSample = (sample, ctrs, target, sampleHashes, relevantRemarks, relevantStations, foreignFields) => {
     const sampleHash = md5(JSON.stringify(sample));
     if (sampleHashes[sampleHash]) {
         ctrs.sampleDuplicates++;
@@ -157,10 +157,11 @@ const analyzeSample = (sample, ctrs, fallbackSampleTime) => {
 }
 
 const getFallbackSampleTime = (result) => {
-    return result.ts?.getTime()/1000-fallbackRtDiff;
+    if (!result.ts) return null;
+    return new Date(result.ts.getTime()-fallbackRtDiff*1000);
 }
 
-const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields, lastSampleTime) => {
+const blockCommit = async (result, relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields, lastSampleTime) => {
     try {
         await db.begin();
         await insertMissing(foreignFields.operator, db.insertOperators, target.schema);
@@ -178,7 +179,6 @@ const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemark
         }
         if (relevantSamples.length > 0) {
             const responseId = await db.insertResponse(target.schema, formatResponse(result, source, ctrs.samples, lastSampleTime, ctrs));
-            perf_start = performance.now();
             if (!target.disableAutoIds) {
                 for (let sample of relevantSamples) {
                     sample.response_id = responseId;
@@ -188,16 +188,15 @@ const blockCommit = async (relevantSamples, ctrs, target, source, relevantRemark
                     sample.prognosis_type_id = foreignFields.prognosis_type.existing[sample.prognosis_type];
                 }
             }
-            perf_start = performance.now();
             await db.insertSamples(target.schema, relevantSamples);
         }
-        perf_start = performance.now();
         await db.commit();
         ctrs.persistedSamples += relevantSamples.length;
     } catch (err) {
         await db.rollback();
         if (err.table != 'response_log' || err.constraint != 'hash') {
             console.log('error', err);
+            console.log(result, lastSampleTime);
             fs.writeFileSync(conf.working_dir+'err_dump.json', JSON.stringify([result.response, relevantStations, relevantSamples, err], null, 2));
             return true;
         } else {
@@ -238,7 +237,7 @@ const loopSamples = async (samples, ctrs, result, target, source, sampleHashes, 
     for (let sample of samples) {
         if (formatSample(sample)
             && analyzeSample(sample, ctrs, fallbackSampleTime)
-            && enrichSample(sample, ctrs, source, sampleHashes, relevantRemarks, relevantStations, foreignFields)
+            && enrichSample(sample, ctrs, target, sampleHashes, relevantRemarks, relevantStations, foreignFields)
             ) {
             relevantSamples.push(sample);
             if (!firstSampleTime) firstSampleTime = sample.sample_time;
@@ -246,7 +245,7 @@ const loopSamples = async (samples, ctrs, result, target, source, sampleHashes, 
         }
     }
     updateResponseCtrs(ctrs, result, lastSampleTime);
-    const errorOccurred = await blockCommit(relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields, lastSampleTime);
+    const errorOccurred = await blockCommit(result, relevantSamples, ctrs, target, source, relevantRemarks, relevantStations, foreignFields, lastSampleTime);
     return {firstSampleTime: firstSampleTime, lastSampleTime: lastSampleTime, errorOccurred: errorOccurred};
 }
 
@@ -255,6 +254,8 @@ const streamSamples = async (samplesStream, ctrs, result, target, source) => {
     let firstSampleTime = undefined;
     let lastSampleTime = undefined;
     const fallbackSampleTime = getFallbackSampleTime(result);
+
+    const perf_start = performance.now();
 
     try {
         await db.begin();
@@ -278,6 +279,8 @@ const streamSamples = async (samplesStream, ctrs, result, target, source) => {
         console.log('error', err);
         errorOccurred = true;
     }
+
+    console.log('end commit', performance.now()-perf_start);
     return {firstSampleTime: firstSampleTime, lastSampleTime: lastSampleTime, errorOccurred: errorOccurred};
 }
 

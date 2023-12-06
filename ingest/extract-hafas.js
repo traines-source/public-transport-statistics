@@ -1,4 +1,5 @@
 import nReadlines from 'n-readlines';
+import md5 from 'md5'
 
 import {createClient} from 'hafas-client';
 import {defaultProfile} from 'hafas-client/lib/default-profile.js';

@@ -99,7 +99,6 @@ const processSamples = async (target) => {
         let perf_start = performance.now();
         let continueWithNextFile = true;
         while ((result = await it.next(continueWithNextFile))) {
-            console.log('start response', performance.now()-perf_start);
             ctrs.perf_read += performance.now()-perf_start;
             ctrs.perf_ctr++;
             perf_start = performance.now();
@@ -122,7 +121,6 @@ const processSamples = async (target) => {
 
             const samples = transformSamples[result.type](result.response);
    
-            console.log('start commit', performance.now()-perf_start);
             ctrs.perf_parse += performance.now()-perf_start;
             perf_start = performance.now();
 
@@ -133,7 +131,6 @@ const processSamples = async (target) => {
             errorOccurred = signal.errorOccurred;
             continueWithNextFile = shouldContinueWithNextFile(targetFirstSampleTime, signal.lastSampleTime);
             
-            console.log('end commit', performance.now()-perf_start);
             ctrs.perf_persist += performance.now()-perf_start;
             perf_start = performance.now();
 
