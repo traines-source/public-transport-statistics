@@ -127,7 +127,7 @@ const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtf
             return false;
         }
     }
-    if (previousGtfs != undefined) {
+    if (!gtfsCache[identifier]['data']['trips']) {
         console.log('Switching to GTFS', gtfsCache[identifier]['file'], 'for GTFSRT', gtfsrtFile);
         const open = await findAndOpenNextFile(gtfsSource, identifier, gtfsFilesIterator, previousGtfs);
         if (open.file != gtfsCache[identifier]['file'])
@@ -353,7 +353,7 @@ const extractGtfsrt = async (dir, identifier, source) => {
     }
     const gtfsrtExplodedSource = {
         "sourceid": 0,
-        "matches": dir+'*/*.gtfsrt',
+        "matches": dir+'*/*.*',
         "compression": "none",
         "type": "callonce",
         "restartWhenLastSuccessfullNotMatching": true
@@ -389,7 +389,7 @@ const extractGtfsrt = async (dir, identifier, source) => {
                     console.log('Skipping.');
                 }
                 if (data && data.header) {
-                    const sampleTime = data.header.timestamp?.toNumber();
+                    const sampleTime = data.header.timestamp?.toNumber() || fallBackSampleTime.getTime()/1000;
                     const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile, source.gtfsSchema);
                     if (gtfsAvailable) response = assembleResponse(data, gtfsCache[identifier]['data'], sampleTime, fallBackSampleTime);
                     else response = {response: null, ts: fallBackSampleTime, type: 'gtfsrtTripUpdate', expectedRtCount: 0, err: 'gtfsUnavailable'};
