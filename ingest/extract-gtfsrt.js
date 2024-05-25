@@ -143,17 +143,17 @@ const prepareRelevantGtfs = async (timestamp, identifier, gtfsFilesIterator, gtf
     return true;
 }
 
-const productType = (id) => {
-    // TODO not only switzerland
-    if (id >= 700 && id < 800) return 700; //'bus';
+const productType = (route) => {
+    const id = parseInt(route.route_type);
+    if (id == 3 || id >= 700 && id < 800) return 700; //'bus';
     if (id >= 200 && id < 300) return 200; //'coach';
-    if (id >= 400 && id < 500) return 400; //'metro';
-    if (id >= 900 && id < 1000) return 900; //'tram';
-    if (id >= 101 && id < 103) return 102; //'nationalExpress';
-    if (id >= 105 && id < 106) return 102; //'nationalExpress';
+    if (id == 1 || id >= 400 && id < 500) return 400; //'metro';
+    if (id == 0 || id >= 900 && id < 1000) return 900; //'tram';
+    if (id == 2 && (route.route_short_name.startsWith('IC') || route.route_short_name.startsWith('EC'))) return 102; //'nationalExpress';
+    if (id >= 101 && id < 103 || id >= 105 && id < 106) return 102; //'nationalExpress';
+    if (id == 2 && route.route_short_name.startsWith('S') || id >= 109 && id < 110) return 109; //'suburban';
     if (id >= 100 && id < 104) return 100; //'regionalExpress';
-    if (id >= 104 && id < 109) return 104; //'regional';
-    if (id >= 109 && id < 110) return 109; //'suburban';
+    if (id == 2 || id >= 104 && id < 109) return 104; //'regional';
     return 1000; //'special';
 }
 
@@ -226,7 +226,7 @@ const populateSample = (meta, is_departure, cancelled, stopId, stopTime, time, s
 }
 
 const matchesStopTime = (stopTime, stopTimeUpdate, scheduledStopId) => {
-    return stopTimeUpdate.stopId == scheduledStopId || stopTimeUpdate.stopSequence == parseInt(stopTime.stop_sequence)
+    return stopTimeUpdate.stopId == scheduledStopId || stopTimeUpdate.stopSequence == stopTime.stop_sequence
 }
 
 const isCancelled = (tripCancelled, stopTimeUpdate, previousCancelled) => {
@@ -242,7 +242,7 @@ const isCancelled = (tripCancelled, stopTimeUpdate, previousCancelled) => {
 const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
     const route = gtfs.routes[trip.route_idx];
     const operator_id = gtfs.agency[route.agency_idx].operator_id;
-    const product_type_id = productType(parseInt(route.route_type));
+    const product_type_id = productType(route);
     const tripCancelled = tripUpdate.trip.scheduleRelationship == GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED;
     const startTime = calculateStartTime(trip, tripUpdate);
     let jUpdate = 0;
@@ -320,7 +320,8 @@ const prepareNextSamples = (tripUpdate, gtfs, sampleTime, samples) => {
         return 0;
     }
     const route = gtfs.routes[trip.route_idx];
-    if (productType(parseInt(route.route_type)) == 700 && Math.random() > randomBusSamplingFactor) {
+    const routeType = productType(route);
+    if (routeType == 700 && Math.random() > randomBusSamplingFactor) {
         return 0;
     }
     createRandomOfflineSamples(gtfs, trip, tripUpdate, sampleTime, samples);
