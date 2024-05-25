@@ -311,7 +311,7 @@ const prepareNextSamples = (tripUpdate, gtfs, sampleTime, samples) => {
     if (!tripUpdate) {
         return 0;
     }
-    const trip = gtfs.trips_map[tripUpdate.trip.tripId];
+    const trip = gtfs.trips[gtfs.trips_map[tripUpdate.trip.tripId]];
     if (!trip || !trip.stop_times?.length) {
         return 0;
     }
