@@ -37,32 +37,41 @@ const parseCsv = async (file, setRow) => {
     });
 }
 
-const filterFields = (row, columns) => {
+const filterFields = (row, columns, transform_key, transform_map) => {
     const filtered = {};
     for (const col of columns) {
-        filtered[col] = row[col];
+        if (col == transform_key) {
+            filtered[transform_key+'x'] = transform_map[row[col]];
+        } else {
+            filtered[col] = row[col];
+        }
     }
     return filtered;
 }
 
-const parseGtfsCsv = async (cache, directory, type, key, columns) => {
-    const results = {};
-    await parseCsv(directory+type+'.txt', (row) => results[row[key]] = filterFields(row, [key, ...columns]));
+const parseGtfsCsv = async (cache, directory, type, key, columns, transform_key, transform_map) => {
+    const results = [];
+    const map = {};
+    await parseCsv(directory+type+'.txt', (row) => {
+        map[row[key]] = results.length;
+        results.push(filterFields(row, [key, ...columns], transform_key, transform_map));
+    });
     cache[type] = results;
+    return map;
 }
 
 const loadGtfs = async (cache, directory) => {
-    await parseGtfsCsv(cache, directory, 'agency', 'agency_id', ['agency_name']);
-    await parseGtfsCsv(cache, directory, 'stops', 'stop_id', ['stop_name', 'stop_lat', 'stop_lon', 'parent_station', 'platform_code']);
-    await parseGtfsCsv(cache, directory, 'routes', 'route_id', ['agency_id', 'route_short_name', 'route_type', 'route_desc']);
-    await parseGtfsCsv(cache, directory, 'trips', 'trip_id', ['route_id', 'trip_short_name']);
+    const agency_map = await parseGtfsCsv(cache, directory, 'agency', 'agency_id', ['agency_name']);
+    const stops_map = await parseGtfsCsv(cache, directory, 'stops', 'stop_id', ['stop_name', 'stop_lat', 'stop_lon', 'parent_station', 'platform_code']);
+    const routes_map = await parseGtfsCsv(cache, directory, 'routes', 'route_id', ['agency_id', 'route_short_name', 'route_type', 'route_desc'], 'agency_id', agency_map);
+    cache['trips_map'] = await parseGtfsCsv(cache, directory, 'trips', 'trip_id', ['route_id', 'trip_short_name'], 'route_id', routes_map);
     await parseCsv(directory+'stop_times.txt', (row) => {
-        const trip = cache['trips'][row['trip_id']];
+        const trip = cache['trips'][cache['trips_map'][row['trip_id']]];
         if (!trip['stop_times']) trip['stop_times'] = [];
         trip['stop_times'].push({
-            'arrival_time': row['arrival_time'] ? splitTimeStr(row['arrival_time']) : null,
-            'departure_time': row['departure_time'] ? splitTimeStr(row['departure_time']) : null,
-            'stop_id': row['stop_id'],
+            'arrival_time': row['arrival_time'] ? timeStrToSecondsAfterMidnight(row['arrival_time']) : null,
+            'departure_time': row['departure_time'] ? timeStrToSecondsAfterMidnight(row['departure_time']) : null,
+            'stop_idx': stops_map[row['stop_id']],
             'stop_sequence': parseInt(row['stop_sequence'])
         });
     });
@@ -70,9 +79,7 @@ const loadGtfs = async (cache, directory) => {
 
 const getStations = (gtfs) => {
     const out = [];
-    const keys = Object.keys(gtfs.stops);
-    for (let key of keys) {
-        const s = gtfs.stops[key];
+    for (let s of gtfs.stops) {
         out.push({
             station_id: s.stop_id,
             name: s.stop_name,
@@ -86,9 +93,7 @@ const getStations = (gtfs) => {
 
 const getOperators = (gtfs) => {
     const out = [];
-    const keys = Object.keys(gtfs.agency);
-    for (let key of keys) {
-        const s = gtfs.agency[key];
+    for (let s of gtfs.agency) {
         s.operator_id = parseInt(s.agency_id) || 0;
         if (s.operator_id > 30000) s.operator_id = 0;
         if (s.operator_id == 0) continue;
@@ -152,24 +157,20 @@ const productType = (id) => {
     return 1000; //'special';
 }
 
-const splitTimeStr = (s) => {
+const timeStrToSecondsAfterMidnight = (s) => {
     const parts = s.split(':');
-    return {
-        h: parseInt(parts[0]),
-        m: parseInt(parts[1]),
-        s: parseInt(parts[2])
-    };
+    return (parseInt(parts[0])*60+parseInt(parts[1]))*60+parseInt(parts[2]);
 }
 
 const calculateStartTime = (trip, tripUpdate) => {
     const scheduled = trip.stop_times[0].departure_time;
     const startDate = tripUpdate.trip.startDate;
-    const startTime = tripUpdate.trip.startTime ? splitTimeStr(tripUpdate.trip.startTime) : scheduled;
+    const startTime = tripUpdate.trip.startTime ? timeStrToSecondsAfterMidnight(tripUpdate.trip.startTime) : scheduled;
     const noonMinus12 = new Date(
         parseInt(startDate.substring(0,4)),
         parseInt(startDate.substring(4,6))-1,
         parseInt(startDate.substring(6,8)),
-        12+startTime.h-scheduled.h
+        12+Math.round((startTime-scheduled)/3600)
     ).getTime()/1000-12*60*60;
     return noonMinus12;
 }
@@ -180,7 +181,7 @@ const joinTime = (startTime, scheduledTime, realTime, previousTime)  => {
     let delaySeconds = null;
 
     if (!startTime) throw Error('Date fallback not implemented');
-    scheduledDatetime = (startTime+(scheduledTime.h*60+scheduledTime.m)*60+scheduledTime.s)*1000;
+    scheduledDatetime = (startTime+scheduledTime)*1000;
 
     if (realTime && realTime.delay != undefined) {
         delaySeconds = realTime.delay;
@@ -196,7 +197,7 @@ const joinTime = (startTime, scheduledTime, realTime, previousTime)  => {
     return {scheduled: scheduledDatetime, real: realDatetime, delay: delaySeconds}
 }
 
-const populateSample = (meta, is_departure, cancelled, stopTime, time, sampleTime, previousTime, previousSample) => {
+const populateSample = (meta, is_departure, cancelled, stopId, stopTime, time, sampleTime, previousTime, previousSample) => {
     const s = {
         sample_time: meta.sample_time,
         trip_id: meta.trip_id,
@@ -206,7 +207,7 @@ const populateSample = (meta, is_departure, cancelled, stopTime, time, sampleTim
         product_name: meta.product_name,
         operator_id: meta.operator_id,
         cancelled: cancelled,
-        station_id: stopTime.stop_id,
+        station_id: stopId,
         stop_number: stopTime.stop_sequence,
         scheduled_time: new Date(time.scheduled),
         //projected_time: meta.cancelled ? null : time.real,
@@ -224,8 +225,8 @@ const populateSample = (meta, is_departure, cancelled, stopTime, time, sampleTim
     return s;
 }
 
-const matchesStopTime = (stopTime, stopTimeUpdate) => {
-    return stopTimeUpdate.stopId == stopTime.stop_id || stopTimeUpdate.stopSequence == parseInt(stopTime.stop_sequence)
+const matchesStopTime = (stopTime, stopTimeUpdate, scheduledStopId) => {
+    return stopTimeUpdate.stopId == scheduledStopId || stopTimeUpdate.stopSequence == parseInt(stopTime.stop_sequence)
 }
 
 const isCancelled = (tripCancelled, stopTimeUpdate, previousCancelled) => {
@@ -239,8 +240,8 @@ const isCancelled = (tripCancelled, stopTimeUpdate, previousCancelled) => {
 }
 
 const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
-    const route = gtfs.routes[trip.route_id];
-    const operator_id = gtfs.agency[route.agency_id].operator_id;
+    const route = gtfs.routes[trip.route_idx];
+    const operator_id = gtfs.agency[route.agency_idx].operator_id;
     const product_type_id = productType(parseInt(route.route_type));
     const tripCancelled = tripUpdate.trip.scheduleRelationship == GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED;
     const startTime = calculateStartTime(trip, tripUpdate);
@@ -267,25 +268,26 @@ const handleTrip = (gtfs, trip, tripUpdate, sampleTime, samples) => {
     }
     for (let j=0; j<len; j++) {
         const stopTime = trip.stop_times[j];
+        const scheduledStopId = gtfs.stops[stopTime.stop_idx]?.stop_id;
         let stopTimeUpdate = null;
-        if (tripUpdate.stopTimeUpdate?.length > jUpdate+1 && matchesStopTime(stopTime, tripUpdate.stopTimeUpdate[jUpdate+1])) {
+        if (tripUpdate.stopTimeUpdate?.length > jUpdate+1 && matchesStopTime(stopTime, tripUpdate.stopTimeUpdate[jUpdate+1], scheduledStopId)) {
             jUpdate++;
             stopTimeUpdate = tripUpdate.stopTimeUpdate[jUpdate];
-        } else if (jUpdate == 0 && tripUpdate.stopTimeUpdate && matchesStopTime(stopTime, tripUpdate.stopTimeUpdate[jUpdate])) {
+        } else if (jUpdate == 0 && tripUpdate.stopTimeUpdate && matchesStopTime(stopTime, tripUpdate.stopTimeUpdate[jUpdate], scheduledStopId)) {
             stopTimeUpdate = tripUpdate.stopTimeUpdate[jUpdate];
         }
 
         previousCancelled = isCancelled(tripCancelled, stopTimeUpdate, previousCancelled);
         if ((stopTimeUpdate?.arrival || stopTime.arrival_time) && j != 0) {
             let time = joinTime(startTime, stopTime.arrival_time, stopTimeUpdate?.arrival, previousTime);
-            previousSample = populateSample(meta, false, previousCancelled, stopTime, time, sampleTime, previousTime, previousSample);
+            previousSample = populateSample(meta, false, previousCancelled, scheduledStopId, stopTime, time, sampleTime, previousTime, previousSample);
             samples.push(previousSample);
             previousTime = time;
             if (time.delay != null && !meta.cancelled) expectedRtCount++;
         }
         if ((stopTimeUpdate?.departure || stopTime.departure_time) && j != len-1) {
             let time = joinTime(startTime, stopTime.departure_time, stopTimeUpdate?.departure, previousTime);
-            previousSample = populateSample(meta, true, previousCancelled, stopTime, time, sampleTime, previousTime, previousSample);
+            previousSample = populateSample(meta, true, previousCancelled, scheduledStopId, stopTime, time, sampleTime, previousTime, previousSample);
             samples.push(previousSample);
             previousTime = time;
             if (time.delay != null && !meta.cancelled) expectedRtCount++;
@@ -309,7 +311,7 @@ const prepareNextSamples = (tripUpdate, gtfs, sampleTime, samples) => {
     if (!tripUpdate) {
         return 0;
     }
-    const trip = gtfs.trips[tripUpdate.trip.tripId];
+    const trip = gtfs.trips_map[tripUpdate.trip.tripId];
     if (!trip || !trip.stop_times?.length) {
         return 0;
     }
@@ -317,7 +319,7 @@ const prepareNextSamples = (tripUpdate, gtfs, sampleTime, samples) => {
         && tripUpdate.trip.scheduleRelationship != GtfsRealtimeBindings.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED) {
         return 0;
     }
-    const route = gtfs.routes[trip.route_id];
+    const route = gtfs.routes[trip.route_idx];
     if (productType(parseInt(route.route_type)) == 700 && Math.random() > randomBusSamplingFactor) {
         return 0;
     }
