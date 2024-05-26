@@ -412,6 +412,12 @@ CAST(
 
 ALTER FUNCTION de_db.ttl_bucket_range(val smallint) OWNER TO "public-transport-stats";
 
+CREATE FUNCTION de_db.latest_sample_ttl_bucket_range(val int4range) RETURNS int4range
+    LANGUAGE sql
+    AS $$SELECT val as ttl_bucket$$;
+
+ALTER FUNCTION de_db.latest_sample_ttl_bucket_range(val int4range) OWNER TO "public-transport-stats";
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;

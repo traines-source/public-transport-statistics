@@ -149,8 +149,9 @@ const productType = (route) => {
     if (id >= 200 && id < 300) return 200; //'coach';
     if (id == 1 || id >= 400 && id < 500) return 400; //'metro';
     if (id == 0 || id >= 900 && id < 1000) return 900; //'tram';
-    if (id == 2 && (route.route_short_name.startsWith('IC') || route.route_short_name.startsWith('EC'))) return 102; //'nationalExpress';
-    if (id >= 101 && id < 103 || id >= 105 && id < 106) return 102; //'nationalExpress';
+    if (id == 2 && route.route_short_name.startsWith('ICE') || id == 101) return 101; //'nationalExpress';
+    if (id == 2 && (route.route_short_name.startsWith('IC') || route.route_short_name.startsWith('EC'))) return 102; //'national';
+    if (id == 102 || id == 105) return 102; //'national';
     if (id == 2 && route.route_short_name.startsWith('S') || id >= 109 && id < 110) return 109; //'suburban';
     if (id >= 100 && id < 104) return 100; //'regionalExpress';
     if (id == 2 || id >= 104 && id < 109) return 104; //'regional';
