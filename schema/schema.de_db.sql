@@ -161,10 +161,16 @@ WITH latest_sample AS (
         END AS delay_minutes,
 	s.projected_duration_minutes,
         CASE
+            WHEN s.cancelled AND substitute_running.remarks_hash IS NOT NULL THEN true
             WHEN s.cancelled THEN false
             ELSE NULL::boolean
         END AS cancelled_with_substitute
    FROM de_db.sample s
+   LEFT JOIN ( SELECT DISTINCT d.remarks_hash
+           FROM ( SELECT r.remarks_hash,
+                    jsonb_array_elements(r.remarks) AS r
+                   FROM ch_sbb.remarks r) d
+          WHERE (d.r ->> 'code'::text) = 'alternative-trip'::text OR (d.r ->> 'text'::text) ~~ '%CE 29%'::text OR (d.r ->> 'text'::text) ~~ '%C 29%'::text OR (d.r ->> 'text'::text) ~~ '%Ersatzfahrt%'::text OR (d.r ->> 'text'::text) ~~ '%substitute%'::text) substitute_running ON substitute_running.remarks_hash = s.remarks_hash
   WHERE s.delay_minutes IS NOT NULL OR s.cancelled
   ORDER BY s.trip_id, s.scheduled_time, s.station_id, s.is_departure, s.sample_time DESC, s.ttl_minutes
 )
