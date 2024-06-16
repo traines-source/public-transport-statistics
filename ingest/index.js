@@ -14,9 +14,8 @@ const validateResult = (result, ctrs) => {
         if (result.expectedRtCount > 0) console.log('WARN: discarding response containing rtData', result.expectedRtCount);
         return false;
     }
-    if (result.type == 'radar' || result.type == 'location') {
+    if (result.type == 'radar') {
         ctrs.typeRadarOrLocation++;
-        return false;
     }
     if (!result.response) {
         ctrs.emptyResponses++;
@@ -65,7 +64,10 @@ const processSamples = async (target) => {
         const ctrs = {
             errors: 0,
             unknownTypes: 0,
+            stationsFromLocMatch: 0,
             typeRadarOrLocation: 0,
+            samplesFromRadar: 0,
+            rtSamplesFromRadar: 0,
             emptyResponses: 0,
             duplicateResponses: 0,
             validResponses: 0,

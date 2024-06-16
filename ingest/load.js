@@ -35,6 +35,8 @@ const formatResponse = (result, source, sampleCount, rtTime, ctrs) => {
         "arrivals": 2,
         "trip": 3,
         "refreshJourney": 4,
+        "locations": 5,
+        "radar": 6,
         "gtfsrtTripUpdate": 10
     }
     return {
@@ -224,6 +226,10 @@ const updateResponseCtrs = (ctrs, result, lastSampleTime) => {
     if (ctrs.samples == 0) {
         ctrs.emptyResponses++;
     }
+    if (result.type == 'radar') {
+        ctrs.samplesFromRadar += ctrs.samples;
+        ctrs.rtSamplesFromRadar += ctrs.rtSamples;
+    }
     if (lastSampleTime && result.ts) {
         ctrs.rtDiffCount++;
         const diff = (result.ts.getTime()-lastSampleTime.getTime())/1000;
@@ -240,6 +246,7 @@ const loopSamples = async (samples, ctrs, result, target, source, sampleHashes, 
     let fallbackSampleTime = getFallbackSampleTime(result);
     for (let sample of samples) {
         if (!sample.station_id) {
+            ctrs.stationsFromLocMatch += sample.stations.length;
             updateRelevantStations(sample, relevantStations);
             continue;
         }

@@ -35,7 +35,7 @@ const responseTypeMapping = {
     'JourneyDetails': {id: 'trip', fn: (resp) => hafasClient.trip('id', {responseData: resp, stopovers: true})},
     'TripSearch': {id: 'journeys', fn: (resp) => hafasClient.journeys(dummyStation, dummyStation, {responseData: resp, stopovers: true})},
     'JourneyGeoPos': {id: 'radar', fn: (resp) => hafasClient.radar({north: 1, west: 0, south: 0, east: 1}, {responseData: resp})},
-    'LocMatch': {id: 'location', fn: (resp) => hafasClient.locations('query', {responseData: resp})},
+    'LocMatch': {id: 'locations', fn: (resp) => hafasClient.locations('query', {responseData: resp})},
     'Reconstruction': {id: 'refreshJourney', fn: (resp) => hafasClient.refreshJourney('token', {responseData: resp, stopovers: true})}
 }
 

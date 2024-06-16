@@ -1,7 +1,7 @@
 const parseStations = (stopOrStations) => {
     const out = [];
     for (let s of stopOrStations) {
-        if (!s) continue;
+        if (!s || s.type == 'location') continue;
         const child = {
             station_id: s.id,
             name: s.name,
@@ -206,6 +206,9 @@ const parseLocations = (locations) => {
 }
 
 const parseRadar = (radar, sample_time) => {
+    if (Array.isArray(radar)) {
+        return [];
+    }
     return radar.movements.map(mv => {
         const parent_metadata = parseMetadata(mv, null, null, null);
         return parseStopovers(mv.nextStopovers, null, null, parent_metadata, sample_time);
