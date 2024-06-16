@@ -392,7 +392,7 @@ const extractGtfsrt = async (dir, identifier, source) => {
                     console.log(e);
                     console.log('Skipping.');
                 }
-                if (data && data.header) {
+                if (data && data.header && data.entity) {
                     const sampleTime = data.header.timestamp?.toNumber() || fallBackSampleTime.getTime()/1000;
                     const gtfsAvailable = await prepareRelevantGtfs(sampleTime, identifier, gtfsFilesIterator, gtfsSource, gtfsrtFile, source.gtfsSchema);
                     if (gtfsAvailable) response = assembleResponse(data, gtfsCache[identifier]['data'], sampleTime, fallBackSampleTime);
