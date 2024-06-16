@@ -110,11 +110,7 @@ const enrichSample = (sample, ctrs, target, sampleHashes, relevantRemarks, relev
         relevantRemarks[remarks_hash] = {remarks_hash: remarks_hash, remarks: remarks};
         sample.remarks_hash = remarks_hash;
     }
-    for (let station of sample.stations) {
-        if (!relevantStations[station.station_id]) {
-            relevantStations[station.station_id] = formatStation(station);
-        }
-    }          
+    updateRelevantStations(sample, relevantStations);
     if (!target.disableAutoIds) {
         setIfMissing(foreignFields.operator, sample.operator?.id, sample.operator);
         setIfMissing(foreignFields.load_factor, sample.load_factor, sample.load_factor);
@@ -122,6 +118,14 @@ const enrichSample = (sample, ctrs, target, sampleHashes, relevantRemarks, relev
         setIfMissing(foreignFields.prognosis_type, sample.prognosis_type, sample.prognosis_type);
     }
     return true;
+}
+
+const updateRelevantStations = (sample, relevantStations) => {
+    for (let station of sample.stations) {
+        if (!relevantStations[station.station_id]) {
+            relevantStations[station.station_id] = formatStation(station);
+        }
+    }
 }
 
 const analyzeSample = (sample, ctrs, fallbackSampleTime) => {
@@ -235,6 +239,10 @@ const loopSamples = async (samples, ctrs, result, target, source, sampleHashes, 
     let lastSampleTime = undefined;
     let fallbackSampleTime = getFallbackSampleTime(result);
     for (let sample of samples) {
+        if (!sample.station_id) {
+            updateRelevantStations(sample, relevantStations);
+            continue;
+        }
         if (formatSample(sample)
             && analyzeSample(sample, ctrs, fallbackSampleTime)
             && enrichSample(sample, ctrs, target, sampleHashes, relevantRemarks, relevantStations, foreignFields)

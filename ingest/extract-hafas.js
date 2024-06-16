@@ -34,7 +34,8 @@ const responseTypeMapping = {
     'ARR': {id: 'arrivals', fn: (resp) => hafasClient.arrivals(dummyStation, {responseData: resp})},
     'JourneyDetails': {id: 'trip', fn: (resp) => hafasClient.trip('id', {responseData: resp, stopovers: true})},
     'TripSearch': {id: 'journeys', fn: (resp) => hafasClient.journeys(dummyStation, dummyStation, {responseData: resp, stopovers: true})},
-    //'JourneyGeoPos': {id: 'radar', fn: (resp) => hafasClient.radar({north: 1, west: 0, south: 0, east: 1}, {responseData: resp})},
+    'JourneyGeoPos': {id: 'radar', fn: (resp) => hafasClient.radar({north: 1, west: 0, south: 0, east: 1}, {responseData: resp})},
+    'LocMatch': {id: 'location', fn: (resp) => hafasClient.locations('query', {responseData: resp})},
     'Reconstruction': {id: 'refreshJourney', fn: (resp) => hafasClient.refreshJourney('token', {responseData: resp, stopovers: true})}
 }
 
@@ -86,8 +87,8 @@ const extractHafas = async (file) => {
                         });
                     }
                     let ctrsType = null;
-                    if (res.svcResL && res.svcResL[0].meth == 'JourneyGeoPos') ctrsType = 'radar';
-                    if (res.svcResL && res.svcResL[0].meth == 'LocMatch') ctrsType = 'location';
+                    //if (res.svcResL && res.svcResL[0].meth == 'JourneyGeoPos') ctrsType = 'radar';
+                    //if (res.svcResL && res.svcResL[0].meth == 'LocMatch') ctrsType = 'location';
                     return Promise.resolve({response: null, ts: null, type: ctrsType, err: null, expectedRtCount: expectedCount})
                 }
             }

@@ -197,6 +197,21 @@ const parseJourneys = (journeys, sample_time) => {
     }).flat()).flat();
 }
 
+const parseLocations = (locations) => {
+    return [
+        {
+            stations: parseStations(locations),                
+        }
+    ];
+}
+
+const parseRadar = (radar, sample_time) => {
+    return radar.movements.map(mv => {
+        const parent_metadata = parseMetadata(mv, null, null, null);
+        return parseStopovers(mv.nextStopovers, null, null, parent_metadata, sample_time);
+    }).flat();
+}
+
 const parseRt = (obj) => {
     return obj.realtimeDataUpdatedAt || obj.realtimeDataFrom;
 }
@@ -207,6 +222,8 @@ const transformSamples = {
     'arrivals': (arrivals) => parseAlternatives(Array.isArray(arrivals) ? arrivals : arrivals.arrivals, false, parseRt(arrivals)),
     'trip': (trip) => parseTrip(trip.trip, parseRt(trip)),
     'refreshJourney': (journey) => parseJourneys([journey.journey], parseRt(journey)),
+    'locations': (locations) => parseLocations(locations),
+    'radar': (radar) => parseRadar(radar, parseRt(radar)),
     'gtfsrtTripUpdate': (gtfsrt) => gtfsrt
 }
 
