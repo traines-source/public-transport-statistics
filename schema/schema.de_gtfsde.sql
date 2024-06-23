@@ -168,11 +168,11 @@ WITH latest_sample AS (
   WHERE s.delay_minutes IS NOT NULL OR s.cancelled
   ORDER BY s.trip_id, s.scheduled_time, s.station_id, s.is_departure, s.sample_time DESC, s.ttl_minutes
 )
-SELECT s.scheduled_time,
-    s.line_name,
+SELECT date_trunc('hour'::text, s.scheduled_time) as scheduled_time,
+    NULL as line_name,
     s.product_type_id,
-    s.station_id,
-    s.operator_id,
+    NULL as station_id,
+    NULL as operator_id,
     s.is_departure,
 	s.load_factor_id,  
                 CASE
@@ -199,10 +199,11 @@ SELECT s.scheduled_time,
                     WHEN latest_sample.id = s.id OR s.projected_duration_minutes IS NULL THEN de_gtfsde.delay_bucket_range(latest_sample.projected_duration_minutes)
                     ELSE de_gtfsde.delay_bucket_range(latest_sample.projected_duration_minutes - s.projected_duration_minutes)
                 END AS latest_sample_duration_bucket,
-            1 AS sample_count
+            COUNT(*) AS sample_count
            FROM de_gtfsde.sample s
              JOIN latest_sample ON s.trip_id = latest_sample.trip_id AND s.scheduled_time = latest_sample.scheduled_time AND s.station_id = latest_sample.station_id AND s.is_departure = latest_sample.is_departure
-          WHERE s.scheduled_time < (SELECT scheduled_time FROM temp_freeze_threshold) AND (NOT s.cancelled OR latest_sample.id = s.id);
+          WHERE s.scheduled_time < (SELECT scheduled_time FROM temp_freeze_threshold) AND (NOT s.cancelled OR latest_sample.id = s.id)
+          GROUP BY date_trunc('hour'::text, s.scheduled_time), product_type_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, prior_scheduled_duration_bucket, prior_projected_duration_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket, latest_sample_duration_bucket;
 
 
 
@@ -239,14 +240,13 @@ ALTER TABLE de_gtfsde.temp_sample_histogram_by_hour RENAME TO sample_histogram_b
 CREATE TABLE de_gtfsde.temp_sample_histogram_by_day (LIKE de_gtfsde.sample_histogram_by_day INCLUDING ALL);
 
 INSERT INTO de_gtfsde.temp_sample_histogram_by_day
-SELECT scheduled_time, product_type_id, operator_id, is_departure, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket,
+SELECT scheduled_time, product_type_id, NULL as operator_id, is_departure, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket,
 sum(sample_count) AS sample_count
 FROM
 (
 SELECT
     date_trunc('day'::text, scheduled_time) AS scheduled_time,
 	product_type_id,
-	operator_id,
 	is_departure,
 	prior_ttl_bucket,
 	prior_delay_bucket,
@@ -254,21 +254,21 @@ SELECT
 	latest_sample_delay_bucket,
     sum(sample_count) AS sample_count
 FROM temp_sample_histogram
-GROUP BY date_trunc('day'::text, scheduled_time), product_type_id, operator_id, is_departure, prior_ttl_bucket, prior_delay_bucket, de_gtfsde.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
+GROUP BY date_trunc('day'::text, scheduled_time), product_type_id, is_departure, prior_ttl_bucket, prior_delay_bucket, de_gtfsde.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
 UNION ALL
 SELECT * FROM de_gtfsde.sample_histogram_by_day
 ) AS t
-GROUP BY scheduled_time, product_type_id, operator_id, is_departure, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket;
+GROUP BY scheduled_time, product_type_id, is_departure, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket;
 
 ALTER TABLE de_gtfsde.temp_sample_histogram_by_day OWNER TO "public-transport-stats";
 DROP TABLE de_gtfsde.sample_histogram_by_day;
 ALTER TABLE de_gtfsde.temp_sample_histogram_by_day RENAME TO sample_histogram_by_day;
 
-
+"""
 CREATE TABLE de_gtfsde.temp_sample_histogram_by_station (LIKE de_gtfsde.sample_histogram_by_station INCLUDING ALL);
 
 INSERT INTO de_gtfsde.temp_sample_histogram_by_station
-SELECT line_name, product_type_id, station_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket,
+SELECT line_name, product_type_id, NULL as station_id, NULL as operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket,
 sum(sample_count) AS sample_count
 FROM
 (
@@ -295,7 +295,7 @@ GROUP BY line_name, product_type_id, station_id, operator_id, is_departure, load
 ALTER TABLE de_gtfsde.temp_sample_histogram_by_station OWNER TO "public-transport-stats";
 DROP TABLE de_gtfsde.sample_histogram_by_station;
 ALTER TABLE de_gtfsde.temp_sample_histogram_by_station RENAME TO sample_histogram_by_station;
-
+"""
 
 CREATE TABLE de_gtfsde.temp_sample_histogram_by_duration (LIKE de_gtfsde.sample_histogram_by_duration INCLUDING ALL);
 
