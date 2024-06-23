@@ -116,7 +116,7 @@ SELECT sample_histogram.product_type_id,
     sample_histogram.latest_sample_ttl_bucket,
     sample_histogram.latest_sample_delay_bucket,
     sum(sample_histogram.sample_count) AS sample_count
-FROM de_gtfsde.sample_histogram_by_hour sample_histogram
+FROM de_gtfsde.sample_histogram_by_day sample_histogram
 GROUP BY sample_histogram.product_type_id, sample_histogram.operator_id, sample_histogram.is_departure, sample_histogram.prior_delay_bucket, sample_histogram.prior_ttl_bucket, sample_histogram.latest_sample_delay_bucket, sample_histogram.latest_sample_ttl_bucket;
 
 TRUNCATE TABLE de_gtfsde.sample_histogram_by_month;
@@ -209,7 +209,7 @@ SELECT s.scheduled_time,
 CREATE TABLE de_gtfsde.temp_sample_histogram_by_hour (LIKE de_gtfsde.sample_histogram_by_hour INCLUDING ALL);
 
 INSERT INTO de_gtfsde.temp_sample_histogram_by_hour
-SELECT day_of_week, hour, product_type_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket,
+SELECT day_of_week, hour, product_type_id, NULL as operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket,
 sum(sample_count) AS sample_count
 FROM
 (
@@ -217,7 +217,6 @@ SELECT
     date_part('dow', scheduled_time)::smallint AS day_of_week,
 	date_part('hour', scheduled_time)::smallint AS hour,
 	product_type_id,
-	operator_id,
 	is_departure,
 	load_factor_id,
 	prior_ttl_bucket,
@@ -226,11 +225,11 @@ SELECT
 	latest_sample_delay_bucket,
     sum(sample_count) AS sample_count
 FROM temp_sample_histogram
-GROUP BY date_part('dow', scheduled_time)::smallint, date_part('hour', scheduled_time)::smallint, product_type_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, de_gtfsde.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
+GROUP BY date_part('dow', scheduled_time)::smallint, date_part('hour', scheduled_time)::smallint, product_type_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, de_gtfsde.latest_sample_ttl_bucket_range(latest_sample_ttl_bucket), latest_sample_delay_bucket
 UNION ALL
 SELECT * FROM de_gtfsde.sample_histogram_by_hour
 ) AS t
-GROUP BY day_of_week, hour, product_type_id, operator_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket;
+GROUP BY day_of_week, hour, product_type_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket;
 
 ALTER TABLE de_gtfsde.temp_sample_histogram_by_hour OWNER TO "public-transport-stats";
 DROP TABLE de_gtfsde.sample_histogram_by_hour;
