@@ -203,7 +203,7 @@ SELECT date_trunc('hour'::text, s.scheduled_time) as scheduled_time,
            FROM de_gtfsde.sample s
              JOIN latest_sample ON s.trip_id = latest_sample.trip_id AND s.scheduled_time = latest_sample.scheduled_time AND s.station_id = latest_sample.station_id AND s.is_departure = latest_sample.is_departure
           WHERE s.scheduled_time < (SELECT scheduled_time FROM temp_freeze_threshold) AND (NOT s.cancelled OR latest_sample.id = s.id)
-          GROUP BY date_trunc('hour'::text, s.scheduled_time), product_type_id, is_departure, load_factor_id, prior_ttl_bucket, prior_delay_bucket, prior_scheduled_duration_bucket, prior_projected_duration_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket, latest_sample_duration_bucket;
+          GROUP BY date_trunc('hour'::text, s.scheduled_time), s.product_type_id, s.is_departure, s.load_factor_id, prior_ttl_bucket, prior_delay_bucket, prior_scheduled_duration_bucket, prior_projected_duration_bucket, latest_sample_ttl_bucket, latest_sample_delay_bucket, latest_sample_duration_bucket;
 
 
 
@@ -217,6 +217,7 @@ FROM
 SELECT
     date_part('dow', scheduled_time)::smallint AS day_of_week,
 	date_part('hour', scheduled_time)::smallint AS hour,
+    NULL as operator_id,
 	product_type_id,
 	is_departure,
 	load_factor_id,
@@ -247,6 +248,7 @@ FROM
 SELECT
     date_trunc('day'::text, scheduled_time) AS scheduled_time,
 	product_type_id,
+    NULL as operator_id,
 	is_departure,
 	prior_ttl_bucket,
 	prior_delay_bucket,
