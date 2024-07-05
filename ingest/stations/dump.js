@@ -30,7 +30,7 @@ var transformStream = ndjson.stringify();
 
 var outputStream = transformStream.pipe(fs.createWriteStream("/data/hafas-stations.ndjson"));
 console.log('fetching from DB...');
-const stations = await db.getStationDetails('db');
+const stations = await db.getStationDetails('de_db'); // change to station_ext
 console.log('reading...');
 let i = 0;
 const wrongPositionHafas = [];
@@ -51,7 +51,7 @@ stations.forEach(s => {
     if (evaNrMap[s.details.id]) {
         const e = evaNrMap[s.details.id]
         s.details["ifoptId"] = e.ifoptId;
-        if (geoDist(s.details.location.longitude, s.details.location.latitude, e.lon, e.lat) > 500) {
+        if (geoDist(s.details.location.longitude, s.details.location.latitude, e.lon, e.lat) > 300) {
             wrongPositionHafas.push(s.details);
             s.details.location.latitude = e.lat;
             s.details.location.longitude = e.lon;
@@ -62,6 +62,9 @@ stations.forEach(s => {
         s.details["lines"] = s.lines.map(l => ({
             "name": l
         }));
+    }
+    if (!s.details["weight"]) {
+        s.details["weight"] = 1;
     }
     transformStream.write(s.details);
     i++;
@@ -80,9 +83,10 @@ Object.keys(evaNrMap).forEach(key => {
                 "latitude": e.lat,
                 "longitude": e.lon
             },
-            "ifoptId": e.ifoptId
+            "ifoptId": e.ifoptId,
+            "weight": 1
         };
-        transformStream.write(details);
+        //transformStream.write(details);
         console.log('Missing HAFAS station: ', details);
     }
 })

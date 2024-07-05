@@ -13,10 +13,8 @@ const formatStation = (s) => {
 var i = 0;
 stations.full()
 .on('data', station => {
-    db.upsertStations('db', [formatStation(station)], true);
+    db.upsertStations('de_db', [formatStation(station)], false); // change to table station_ext
     i++;
     if (i%1000==0) console.log(i);
 })
 .on('error', console.error)
-
-db.disconnect();
