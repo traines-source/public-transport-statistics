@@ -4,7 +4,7 @@ Collecting traffic of realtime public transport APIs and GTFS-RT feeds to calcul
 
 ## Access the results
 
-(Currently Germany (DB) only; Belgium, France, Switzerland, Netherlands TBD)
+(Currently Germany and Switerland only; Belgium, France, Netherlands TBD)
 
 * Dashboard: https://stats.traines.eu
 * DB Querying (SQL): https://query.stats.traines.eu (user: guest-read@traines.eu pass: ptstats)
@@ -103,7 +103,7 @@ For cancelled trips, we detect based on the recorded remarks whether a substitut
 
 ### Dashboard: Relative histogram with prior_delay_bucket and prior_ttl_bucket by product_type
 
-Also see the [dashboard](https://stats.traines.eu/) and inspect panels.
+See the [dashboard](https://stats.traines.eu/) and inspect panels.
 
 ```
 SELECT CASE WHEN l.latest_sample_delay_bucket IS NULL THEN 'cancelled' ELSE l.latest_sample_delay_bucket::text END as label, (sample_count/SUM(sample_count) OVER ()) AS percent_of_departures
@@ -162,7 +162,10 @@ If you find more efficient or simpler variants of these queries (that are still 
 ## Related work
 
 * Thanks to [@derhuerst](https://github.com/derhuerst) for his data support (and of course his work on [hafas-client](https://github.com/public-transport/hafas-client/) and [FPTF](https://github.com/public-transport/friendly-public-transport-format) and...).
+* https://github.com/traines-source/stochastic-journey-strategies - stochastic routing based on these statistics
 * https://github.com/dystonse/dystonse – DYnamic STochastic ONline SEarch in public transport networks, with realtime data collection for statistics, but discontinued
+* http://wahrscheinlich-ankommen.de/
+* https://bahnvorhersage.de/
 * https://www.zugfinder.net/ – connecting train probabilities, delay statistics
 * http://puenktlichkeit.ch/ – delays in Switzerland
 * https://verspaetungen-sbb-zuege.opendata.iwi.unibe.ch/visualization.html – simple delay distributions Switzerland
