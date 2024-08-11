@@ -4,7 +4,7 @@ Collecting traffic of realtime public transport APIs and GTFS-RT feeds to calcul
 
 ## Access the results
 
-(Currently Germany and Switerland only; Belgium, France, Netherlands TBD)
+(Currently Germany and Switzerland only; Belgium, France, Netherlands TBD)
 
 * Dashboard: https://stats.traines.eu
 * DB Querying (SQL): https://query.stats.traines.eu (user: guest-read@traines.eu pass: ptstats)
@@ -95,69 +95,15 @@ For more insight on `latest_sample_ttl_bucket`, check out the "Realtime data del
 
 ### Filtering latest_samples and first aggregation to sample_histogram
 
-See procedure [refresh_histograms_and_cleanup_samples()](https://github.com/traines-source/public-transport-statistics/blob/master/schema/schema.sql#L144). This procedure will be triggered automatically when ingesting. The procedure refresh_histograms_aggregations() can be triggered manually to update the aggregations `sample_histogram_without_time` and `sample_histogram_by_month` that are used by the dashboard for faster querying.
+See procedure [refresh_histograms_and_cleanup_samples()](https://github.com/traines-source/public-transport-statistics/blob/master/schema/schema.de_db.sql#L144). This procedure will be triggered automatically when ingesting. The procedure refresh_histograms_aggregations() can be triggered manually to update the aggregations `sample_histogram_without_time` and `sample_histogram_by_month` that are used by the dashboard for faster querying.
 
 Since we do not actually know the final delay of a trip at a station, we record the latest samples for each trip-station-scheduled_time-is_departure combination and take that as ground truth. We can later restrict our statistics to latest samples that were taken not too far from final departure/arrival (cf. `latest_sample_ttl_bucket`).
 
 For cancelled trips, we detect based on the recorded remarks whether a substitute trip is running and as such, from a traveler's perspective, whether the trip is not actually cancelled.
 
-### Dashboard: Relative histogram with prior_delay_bucket and prior_ttl_bucket by product_type
+### Dashboard queries
 
 See the [dashboard](https://stats.traines.eu/) and inspect panels.
-
-```
-SELECT CASE WHEN l.latest_sample_delay_bucket IS NULL THEN 'cancelled' ELSE l.latest_sample_delay_bucket::text END as label, (sample_count/SUM(sample_count) OVER ()) AS percent_of_departures
-FROM (
-SELECT latest_sample_delay_bucket, SUM(sample_count) as sample_count
-FROM ${schema}.sample_histogram
-NATURAL JOIN ${schema}.product_type p
-WHERE prior_ttl_bucket = '$prior_ttl_bucket'::int4range AND (CASE WHEN '$prior_delay_bucket' = 'Unknown' THEN prior_delay_bucket IS NULL ELSE prior_delay_bucket::text = '$prior_delay_bucket' END) AND is_departure AND latest_sample_ttl_bucket <@ '$latest_sample_ttl_bucket'::int4range
-GROUP BY latest_sample_delay_bucket
-) AS s
-FULL OUTER JOIN (SELECT DISTINCT latest_sample_delay_bucket FROM ${schema}.sample_histogram WHERE latest_sample_delay_bucket IS NOT NULL) AS l ON l.latest_sample_delay_bucket = s.latest_sample_delay_bucket
-ORDER BY l.latest_sample_delay_bucket
-```
-
-### Dashboard: Absolute histogram by operator
-
-```
-SELECT CASE WHEN l.latest_sample_delay_bucket IS NULL THEN 'cancelled' ELSE l.latest_sample_delay_bucket::text END as label, (sample_count/SUM(sample_count) OVER ()) AS percent_of_arrivals
-FROM (
-SELECT latest_sample_delay_bucket, SUM(sample_count) as sample_count
-FROM ${schema}.sample_histogram
-NATURAL JOIN ${schema}.operator o
-WHERE prior_ttl_bucket IS NULL AND NOT is_departure AND latest_sample_ttl_bucket <@ '$latest_sample_ttl_bucket'::int4range AND o.id = '$operator'
-GROUP BY latest_sample_delay_bucket
-) AS s
-FULL OUTER JOIN (SELECT DISTINCT latest_sample_delay_bucket FROM ${schema}.sample_histogram WHERE latest_sample_delay_bucket IS NOT NULL) AS l ON l.latest_sample_delay_bucket = s.latest_sample_delay_bucket
-WHERE NOT l.latest_sample_delay_bucket <@ '(,-5)'::int4range OR l.latest_sample_delay_bucket IS NULL
-ORDER BY l.latest_sample_delay_bucket
-```
-
-### Dashboard: Sanity check with official statistics
-
-```
-SELECT CONCAT(s.year::text, '-', s.month::text, ' ', od.category),
-od.delay_percentage_5min,
-ROUND(SUM(CASE WHEN latest_sample_delay_bucket <@ '(,5]'::int4range THEN sample_count ELSE 0 END)/SUM(sample_count)*100, 1) AS estimated_percentage_5min,
-od.delay_percentage_15min,
-ROUND(SUM(CASE WHEN latest_sample_delay_bucket <@ '(,15]'::int4range THEN sample_count ELSE 0 END)/SUM(sample_count)*100, 1) AS estimated_percentage_15min,
-SUM(sample_count) AS sample_count
-FROM (
-	SELECT year, month, operator_id, latest_sample_delay_bucket, SUM(sample_count) as sample_count
-	FROM db.sample_histogram
-	NATURAL JOIN db.product_type
-	WHERE prior_ttl_bucket IS NULL AND NOT is_departure AND latest_sample_ttl_bucket <@ '$latest_sample_ttl_bucket'::int4range
-	AND latest_sample_delay_bucket IS NOT NULL AND latest_sample_delay_bucket::text != '(,)'
-	GROUP BY year, month, operator_id, latest_sample_delay_bucket
-) AS s
-NATURAL JOIN db.operator o
-JOIN db.official_delay_stats_operators oo ON oo.operator = o.id
-JOIN db.official_delay_stats od ON od.category = oo.category AND od.year = s.year AND od.month = s.month
-GROUP BY s.year, s.month, od.category, od.delay_percentage_5min, od.delay_percentage_15min
-
-```
-If you find more efficient or simpler variants of these queries (that are still (or more?) correct), let me know!
 
 ## Related work
 
