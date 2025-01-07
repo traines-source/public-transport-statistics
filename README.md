@@ -12,7 +12,7 @@ Collecting traffic of realtime public transport APIs and GTFS-RT feeds to calcul
 
 ## Data sources
 
-* GTFS and GTFS-RT feeds of Belgium, France, Germany, Switzerland and the Netherlands (in most cases partial coverage, to be investigated), the archived data since 03/2023 is available at http://mirror.traines.eu (about 70 GB per month).
+* GTFS and GTFS-RT feeds of Belgium, France, Germany, Switzerland and the Netherlands (in most cases partial coverage, to be investigated), the archived data since 03/2023 is available at http://mirror.traines.eu (about 70 GB per month). There is also a public live mirror of the German DELFI GTFS-RT feed at https://stc.traines.eu/mirror/german-delfi-gtfs-rt/.
 * If you know of more at least country-level european GTFS-RT feeds (I know of Norway), let me know.
 * Traffic of realtime public transport APIs (from [TSTP](https://tespace.traines.eu) among others). For access to the raw data since 10/2022 (about 20 GB per month), please get in touch.
 * [Official DB Haltestellendaten](https://data.deutschebahn.com/dataset/data-haltestellen.html) and other data sources for [-> station mapping](https://github.com/traines-source/db-hafas-gtfs-stops-mapping).
