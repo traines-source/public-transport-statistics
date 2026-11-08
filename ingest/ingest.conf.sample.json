@@ -47,5 +47,15 @@
                 }
             ]
         }
+    ],
+    "parquetTargets": [
+        {
+            "schema": "de_bahnvorhersage",
+            "disabled": false,
+            "sourceid": 0,
+            "matches": "/source/bahnvorhersage/*.parquet",
+            "aggregateEvery": 7,
+            "stationNamesFrom": "de_db"
+        }
     ]
 }

@@ -216,7 +216,12 @@ const disconnect = () => {
   .catch((err) => console.error('error during disconnection', err.stack));
 }
 
+const query = (text, values) => {
+    return pgc.query(text, values);
+}
+
 export default {
+    query,
     getOperatorMap,
     getProductTypeMap,
     getLoadFactorMap,
